@@ -17,7 +17,7 @@
   --fw-bold: 800;
   --max-width: 1120px;
   --font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto;
-  --page-bg-image: url(https://cdn.nexorabot.xyz/nexora/img/blue-landscape.webp);
+  --page-bg-image: none;
   --page-bg-solid: #071025;
 }
 
@@ -42,7 +42,60 @@ body {
   padding: 48px 20px;
 }
 
-.container { width: 100%; max-width: var(--max-width); display: grid; gap: 28px; }
+.container { width: 100%; max-width: var(--max-width); display: grid; gap: 28px; position: relative; }
+
+.app-loading-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(12px);
+}
+
+.app-loading-backdrop {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(2,6,23,0.92), rgba(8,15,31,0.96));
+}
+
+.spinner {
+  position: relative;
+  width: 11.5px;
+  height: 11.5px;
+  z-index: 1;
+}
+
+.spinner div {
+  position: absolute;
+  width: 50%;
+  height: 150%;
+  background: var(--accent, #38bdf8);
+  transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1%));
+  animation: spinner-fzua35 1.2s calc(var(--delay) * 1.2s) infinite ease;
+  border-radius: 999px;
+}
+
+.spinner div:nth-child(1) { --delay: 0.12; --rotation: 36; --translation: 150; }
+.spinner div:nth-child(2) { --delay: 0.24; --rotation: 72; --translation: 150; }
+.spinner div:nth-child(3) { --delay: 0.36; --rotation: 108; --translation: 150; }
+.spinner div:nth-child(4) { --delay: 0.48; --rotation: 144; --translation: 150; }
+.spinner div:nth-child(5) { --delay: 0.6; --rotation: 180; --translation: 150; }
+.spinner div:nth-child(6) { --delay: 0.72; --rotation: 216; --translation: 150; }
+.spinner div:nth-child(7) { --delay: 0.84; --rotation: 252; --translation: 150; }
+.spinner div:nth-child(8) { --delay: 0.96; --rotation: 288; --translation: 150; }
+.spinner div:nth-child(9) { --delay: 1.08; --rotation: 324; --translation: 150; }
+.spinner div:nth-child(10) { --delay: 1.2; --rotation: 360; --translation: 150; }
+
+@keyframes spinner-fzua35 {
+  0%, 10%, 20%, 30%, 50%, 60%, 70%, 80%, 90%, 100% {
+    transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1%));
+  }
+  50% {
+    transform: rotate(calc(var(--rotation) * 1deg)) translate(0, calc(var(--translation) * 1.5%));
+  }
+}
 
 /* ═══════════════════════════════════════════
    HEADER

@@ -43,9 +43,9 @@ async function loadEnv() {
       const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
       if (key && !(key in process.env)) process.env[key] = val;
     }
-    console.log("[Server] .env cargado correctamente");
+    info("[Server] .env loaded");
   } catch {
-    console.log("[Server] Sin archivo .env — usando variables de entorno del sistema");
+    info("[Server] No .env file — using system environment variables");
   }
 }
 
@@ -53,7 +53,7 @@ async function writeEnv(updates) {
   let content = "";
   try {
     content = await fs.readFile(ENV_FILE, "utf8");
-  } catch { /* no existe aún */ }
+  } catch { /* doesn't exist yet */ }
 
   // Parsear .env actual
   const lines = content.split("\n");
@@ -67,7 +67,7 @@ async function writeEnv(updates) {
     existing.set(key, i);
   });
 
-  // Actualizar o añadir claves
+  // Update or add keys
   for (const [key, val] of Object.entries(updates)) {
     if (val === undefined || val === null) continue;
     const safeVal = String(val).includes(" ") ? `"${val}"` : val;
@@ -77,7 +77,7 @@ async function writeEnv(updates) {
     } else {
       lines.push(newLine);
     }
-    // Actualizar en proceso también
+    // Also update in process
     process.env[key] = String(val);
   }
 
@@ -91,7 +91,7 @@ async function writeEnv(updates) {
 ═══════════════════════════════════════════ */
 
 const DEFAULT_APPEARANCE = {
-  siteTitle:            "Estado del sistema",
+  siteTitle:            "System status",
   logoUrl:              "",
   faviconUrl:           "",
   backgroundType:       "image",
@@ -99,12 +99,160 @@ const DEFAULT_APPEARANCE = {
   backgroundSolidColor: "#071025",
   footerText:           "",
   fontFamily:           "Inter",
-  accentColor:          "",
+  accentColor:          "#38bdf8",
+  accentStrongColor:    "#0ea5e9",
+  bgColor1:             "#080e1c",
+  bgColor2:             "#040814",
+  cardColor:            "#ffffff",
+  mutedColor:           "#94a3b8",
+  successColor:         "#22c55e",
+  dangerColor:          "#ef4444",
+  warningColor:         "#f59e0b",
+  infoColor:            "#3b82f6",
+  language:             "en",
+  texts:                {},
 };
 
+// Color fields validated/normalized as #rrggbb
+const COLOR_FIELDS = [
+  "accentColor", "accentStrongColor", "bgColor1", "bgColor2", "cardColor",
+  "mutedColor", "successColor", "dangerColor", "warningColor", "infoColor",
+];
+
+function hexToRgbTriplet(hex) {
+  const h = (hex || "").replace("#", "");
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(" ");
+}
+
+function normalizeAppearance(input = {}) {
+  const raw = input && typeof input === "object" ? input : {};
+  const texts = raw.texts && typeof raw.texts === "object" ? raw.texts : {};
+  const out = {
+    ...DEFAULT_APPEARANCE,
+    ...raw,
+    siteTitle: typeof raw.siteTitle === "string" && raw.siteTitle.trim() ? raw.siteTitle.trim() : DEFAULT_APPEARANCE.siteTitle,
+    logoUrl: typeof raw.logoUrl === "string" ? raw.logoUrl.trim() : "",
+    faviconUrl: typeof raw.faviconUrl === "string" ? raw.faviconUrl.trim() : "",
+    backgroundType: raw.backgroundType === "solid" ? "solid" : "image",
+    backgroundImageUrl: typeof raw.backgroundImageUrl === "string" ? raw.backgroundImageUrl.trim() : "",
+    backgroundSolidColor: /^#[0-9a-fA-F]{6}$/.test(raw.backgroundSolidColor ?? "") ? raw.backgroundSolidColor : DEFAULT_APPEARANCE.backgroundSolidColor,
+    footerText: typeof raw.footerText === "string" ? raw.footerText : "",
+    fontFamily: typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily.trim() : DEFAULT_APPEARANCE.fontFamily,
+    language: raw.language === "en" ? "en" : "es",
+    texts,
+  };
+  for (const f of COLOR_FIELDS) {
+    out[f] = /^#[0-9a-fA-F]{6}$/.test(raw[f] ?? "") ? raw[f] : DEFAULT_APPEARANCE[f];
+  }
+  return out;
+}
+
 async function readAppearance() {
-  try { return { ...DEFAULT_APPEARANCE, ...await readJson(APPEARANCE_FILE) }; }
-  catch { return { ...DEFAULT_APPEARANCE }; }
+  try { return normalizeAppearance(await readJson(APPEARANCE_FILE)); }
+  catch { return normalizeAppearance(DEFAULT_APPEARANCE); }
+}
+
+/* Embed texts — editable via appearance.texts, brand-free defaults */
+const DEFAULT_EMBED_TEXTS = {
+  "embed-footer":       "{site} Status",
+  "embed-status-title": "📡 Status — {site}",
+};
+
+function embedText(appearance, key, vars = {}) {
+  const tpl = appearance?.texts?.[key]?.trim() || DEFAULT_EMBED_TEXTS[key] || "";
+  const site = appearance?.siteTitle?.trim() || "System";
+  return tpl.replace(/\{site\}/g, site).replace(/\{id\}/g, vars.id ?? "");
+}
+
+/* ═══════════════════════════════════════════
+   INDEX.HTML — regenerated from pristine template (whitelabel, no FOUC)
+═══════════════════════════════════════════ */
+
+const INDEX_TEMPLATE_FILE = path.join(__dirname, "templates", "index.template.html");
+const INDEX_OUTPUT_FILE   = path.join(__dirname, "public", "index.html");
+const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%2338bdf8'/%3E%3C/svg%3E";
+
+function esc(s) {
+  return String(s ?? "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function googleFontHref(family) {
+  const f = encodeURIComponent(family).replace(/%20/g, "+");
+  return `https://fonts.googleapis.com/css2?family=${f}:wght@400;500;600;700;800&display=swap`;
+}
+
+async function readLangDefaults(lang) {
+  try { return await readJson(path.join(__dirname, "public", "lang", lang === "es" ? "es.json" : "en.json")); }
+  catch { return {}; }
+}
+
+async function regenerateIndexHtml() {
+  try {
+    const appearance = await readAppearance();
+    const langDefaults = await readLangDefaults(appearance.language);
+    const texts = { ...langDefaults, ...(appearance.texts || {}) };
+
+    const siteTitle = appearance.siteTitle;
+    const favicon = appearance.faviconUrl || appearance.logoUrl || DEFAULT_FAVICON;
+    const themeColor = appearance.backgroundType === "solid" ? appearance.backgroundSolidColor : appearance.accentColor;
+
+    const ogImageBlock = appearance.logoUrl || appearance.faviconUrl
+      ? `  <meta property="og:image" content="${esc(appearance.logoUrl || appearance.faviconUrl)}" />`
+      : "";
+
+    const preloadLines = [];
+    if (appearance.logoUrl) preloadLines.push(`  <link rel="preload" as="image" href="${esc(appearance.logoUrl)}" />`);
+    if (appearance.backgroundType === "image" && appearance.backgroundImageUrl) {
+      preloadLines.push(`  <link rel="preload" as="image" href="${esc(appearance.backgroundImageUrl)}" fetchpriority="high" />`);
+    }
+
+    const logoBlock = appearance.logoUrl
+      ? `          <div class="logo" id="brand-logo-wrap">\n            <img id="brand-logo" src="${esc(appearance.logoUrl)}" alt="${esc(siteTitle)} logo" width="36" height="36" loading="eager" decoding="async" />\n          </div>`
+      : "";
+
+    const pageBg = appearance.backgroundType === "solid"
+      ? `      --page-bg-image: none;\n      --page-bg-solid: ${esc(appearance.backgroundSolidColor)};`
+      : appearance.backgroundImageUrl
+        ? `      --page-bg-image: url(${appearance.backgroundImageUrl});`
+        : `      --page-bg-image: none;\n      --page-bg-solid: ${esc(appearance.backgroundSolidColor)};`;
+
+    const inlineVars = [
+      `      --accent: ${hexToRgbTriplet(appearance.accentColor)};`,
+      `      --accent-strong: ${hexToRgbTriplet(appearance.accentStrongColor)};`,
+      `      --bg-1: ${hexToRgbTriplet(appearance.bgColor1)};`,
+      `      --bg-2: ${hexToRgbTriplet(appearance.bgColor2)};`,
+      `      --card-bg: ${hexToRgbTriplet(appearance.cardColor)};`,
+      `      --muted: ${hexToRgbTriplet(appearance.mutedColor)};`,
+      `      --success: ${hexToRgbTriplet(appearance.successColor)};`,
+      `      --danger: ${hexToRgbTriplet(appearance.dangerColor)};`,
+      `      --warning: ${hexToRgbTriplet(appearance.warningColor)};`,
+      `      --info: ${hexToRgbTriplet(appearance.infoColor)};`,
+      `      --font-family: ${appearance.fontFamily}, system-ui, sans-serif;`,
+      pageBg,
+    ].join("\n");
+
+    let html = await fs.readFile(INDEX_TEMPLATE_FILE, "utf8");
+    html = html
+      .replace(/__TITLE__/g, esc(siteTitle))
+      .replace(/__META_DESC__/g, esc(`Real-time status page for ${siteTitle}: services, network, and infrastructure.`))
+      .replace(/__THEME_COLOR__/g, esc(themeColor))
+      .replace("__OG_IMAGE_BLOCK__", ogImageBlock)
+      .replace(/__FAVICON_HREF__/g, esc(favicon))
+      .replace("__PRELOAD_BLOCK__", preloadLines.join("\n"))
+      .replace(/__FONT_LINK_HREF__/g, googleFontHref(appearance.fontFamily))
+      .replace("__INLINE_VARS__", inlineVars)
+      .replace("__LOGO_BLOCK__", logoBlock)
+      .replace(/__BRAND_TITLE__/g, esc(siteTitle))
+      .replace(/__BRAND_SUBTITLE__/g, esc(texts["brand-subtitle"] || ""))
+      .replace(/__FOOTER_TEXT__/g, esc(appearance.footerText || texts["footer-default"] || ""));
+
+    const tmp = INDEX_OUTPUT_FILE + ".tmp";
+    await fs.writeFile(tmp, html);
+    await fs.rename(tmp, INDEX_OUTPUT_FILE);
+    info("[Server] index.html regenerated from template");
+  } catch (e) {
+    error("[Server] Failed to regenerate index.html:", e.message);
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -153,7 +301,7 @@ function makeRateLimiter(maxRequests, windowMs) {
     data.count++;
     if (data.count > maxRequests) {
       res.setHeader("Retry-After", Math.ceil((data.resetAt - now) / 1000));
-      return res.status(429).json({ error: "Demasiadas solicitudes. Intenta más tarde." });
+      return res.status(429).json({ error: "Too many requests. Please try again later." });
     }
     next();
   };
@@ -172,14 +320,14 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   : null;
 
 if (IS_PROD && !allowedOrigins) {
-  console.warn("[Server] ⚠ ALLOWED_ORIGINS no configurado — CORS acepta cualquier origen. Configura ALLOWED_ORIGINS en .env para producción.");
+  warn("[Server] ⚠ ALLOWED_ORIGINS not set — CORS accepts any origin. Set ALLOWED_ORIGINS in .env for production.");
 }
 
 app.use(cors({
   origin: allowedOrigins
     ? (origin, cb) => {
         if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-        cb(new Error("CORS: origen no permitido"));
+        cb(new Error("CORS: origin not allowed"));
       }
     : true,
   methods: ["GET", "POST", "PUT", "DELETE"],
@@ -193,18 +341,31 @@ app.use(express.json({ limit: "64kb" }));
 ═══════════════════════════════════════════ */
 
 let detector;
+let detectorManualStop  = false;
+let detectorRestartCount = 0;
 
-try {
+function spawnDetector() {
   detector = spawn("node", [path.join(__dirname, "utils", "detector.js")], {
     stdio: "inherit",
     env: { ...process.env },
   });
   detector.on("exit", (code, signal) => {
-    console.log(`[Uptime Detector] Proceso terminado (code=${code}, signal=${signal})`);
+    info(`[Uptime Detector] Process exited (code=${code}, signal=${signal})`);
+    if (detectorManualStop) return;
+    detectorRestartCount++;
+    const delay = Math.min(30_000, 2_000 * detectorRestartCount);
+    warn(`[Uptime Detector] Unexpected exit — restarting in ${delay / 1000}s (attempt ${detectorRestartCount})`);
+    setTimeout(spawnDetector, delay).unref();
   });
-  console.log("[Uptime Detector] Iniciado en segundo plano");
+  // Stable run for 5min → forgive past crashes, backoff resets to normal.
+  setTimeout(() => { detectorRestartCount = 0; }, 5 * 60_000).unref();
+}
+
+try {
+  spawnDetector();
+  info("[Uptime Detector] Started in background");
 } catch (err) {
-  console.error("[Uptime Detector] Error al iniciar:", err);
+  error("[Uptime Detector] Failed to start:", err);
 }
 
 /* ═══════════════════════════════════════════
@@ -226,7 +387,7 @@ function getAdminToken() {
 }
 
 /* ═══════════════════════════════════════════
-   DISCORD — estado del bot y embeds de estado
+   DISCORD — bot status and embed status
 ═══════════════════════════════════════════ */
 
 const botState = { verified: false, username: null, lastCheck: null };
@@ -280,15 +441,14 @@ async function sendStatusEmbed() {
           ? (allServices.reduce((s, v) => s + (v.onlineper ?? 100), 0) / allServices.length).toFixed(2)
           : "100.00");
     const color = someDown ? 0xef4444 : (allUp ? 0x22c55e : 0xf59e0b);
-    const statusStr = someDown ? "⚠️ Degradado" : (allUp ? "✅ Operacional" : "🔄 Parcial");
-    const siteTitle = appearance.siteTitle?.trim() || "del sistema";
-    const embedTitle = `📡 Estado de ${siteTitle}`;
+    const statusStr = someDown ? "⚠️ Degraded" : (allUp ? "✅ Operational" : "🔄 Partial");
+    const embedTitle = embedText(appearance, "embed-status-title");
 
     const fields = allServices.map(svc => {
       const icon = svc.status === "up" ? "🟢" : "🔴";
       const uptime = typeof svc.onlineper === "number" ? `${svc.onlineper.toFixed(2)}%` : "—";
       const lat = svc.latency != null ? `${svc.latency}ms` : "—";
-      return { name: `${icon} ${svc.name}`, value: `📈 Uptime: \`${uptime}\`\n⚡ Latencia: \`${lat}\``, inline: true };
+      return { name: `${icon} ${svc.name}`, value: `📈 Uptime: \`${uptime}\`\n⚡ Latency: \`${lat}\``, inline: true };
     });
 
     const chunks = [];
@@ -297,7 +457,7 @@ async function sendStatusEmbed() {
 
     const embeds = chunks.map((chunk, idx) => ({
       title: idx === 0 ? embedTitle : undefined,
-      description: idx === 0 ? `**Uptime Global:** \`${globalUp}%\`\n**Estado:** ${statusStr}\n**Actualización:** <t:${Math.floor(Date.now() / 1000)}:R>` : undefined,
+      description: idx === 0 ? `**Global Uptime:** \`${globalUp}%\`\n**Status:** ${statusStr}\n**Updated:** <t:${Math.floor(Date.now() / 1000)}:R>` : undefined,
       color,
       timestamp: idx === 0 ? new Date().toISOString() : undefined,
       fields: chunk,
@@ -310,10 +470,10 @@ async function sendStatusEmbed() {
         body: JSON.stringify({ embeds }),
       });
       if (editRes.ok) {
-        info("[discord] 📡 Embed de estado actualizado");
+        info("[discord] 📡 Status embed updated");
         return;
       }
-      warn(`[discord] No se pudo editar mensaje (${editRes.status}), creando nuevo`);
+      warn(`[discord] Could not edit message (${editRes.status}), creating new one`);
       _statusMessageId = null;
     }
 
@@ -326,12 +486,12 @@ async function sendStatusEmbed() {
       const msg = await postRes.json();
       _statusMessageId = msg.id;
       await writeEnv({ DISCORD_STATUS_MESSAGE_ID: msg.id });
-      info(`[discord] 📡 Embed de estado creado: ${msg.id}`);
+      info(`[discord] 📡 Status embed created: ${msg.id}`);
     } else {
       warn(`[discord] ⚠ status embed: ${postRes.status} — ${await postRes.text()}`);
     }
   } catch (e) {
-    warn("[discord] Error en sendStatusEmbed:", e.message);
+    warn("[discord] Error on sendStatusEmbed:", e.message);
   }
 }
 
@@ -341,7 +501,7 @@ function watchStatusFile() {
     clearTimeout(_statusWatchDebounce);
     _statusWatchDebounce = setTimeout(() => sendStatusEmbed(), 1500);
   });
-  info("[discord] 👁 Watching status.json para auto-embed (polling 5s)");
+  info("[discord] 👁 Watching status.json for auto-embed (polling 5s)");
 }
 
 /* ═══════════════════════════════════════════
@@ -352,13 +512,14 @@ async function editDiscordEmbed(incident, update, serviceName) {
   const token     = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
   if (!token || !channelId || !incident.discordMessageId) return;
+  const appearance = await readAppearance();
 
   const statusLabels = {
-    investigating: "🔍 Investigando",
-    identified:    "🔎 Identificado",
-    monitoring:    "🟡 Monitoreando",
-    resolved:      "✅ Resuelto",
-    maintenance:   "🔧 Mantenimiento",
+    investigating: "🔍 Investigating",
+    identified:    "🔎 Identified",
+    monitoring:    "🟡 Monitoring",
+    resolved:      "✅ Resolved",
+    maintenance:   "🔧 Maintenance",
   };
   const colors = {
     investigating: 0xef4444,
@@ -369,23 +530,23 @@ async function editDiscordEmbed(incident, update, serviceName) {
   };
 
   const fields = [
-    { name: "Servicio", value: serviceName ?? incident.serviceName ?? "—", inline: true },
-    { name: "Estado",   value: statusLabels[update.status] ?? update.status,  inline: true },
+    { name: "Service", value: serviceName ?? incident.serviceName ?? "—", inline: true },
+    { name: "Status",   value: statusLabels[update.status] ?? update.status,  inline: true },
   ];
 
   if (incident.updates?.length > 1) {
     const ms = new Date(update.at) - new Date(incident.createdAt);
     const m  = Math.floor(ms / 60_000);
     const h  = Math.floor(m / 60);
-    fields.push({ name: "Duración", value: h > 0 ? `${h}h ${m % 60}m` : `${m}m`, inline: false });
+    fields.push({ name: "Duration", value: h > 0 ? `${h}h ${m % 60}m` : `${m}m`, inline: false });
   }
 
   const embed = {
-    title: `📋 Actualización — ${incident.title}`,
-    description: update.message || "Sin mensaje.",
+    title: `📋 Update — ${incident.title}`,
+    description: update.message || "No message.",
     color: colors[update.status] ?? 0x6b7280,
     timestamp: update.at,
-    footer: { text: `Nexora Status • ID: ${incident.id}` },
+    footer: { text: embedText(appearance, "embed-footer", { id: incident.id }) },
     fields,
   };
 
@@ -399,13 +560,13 @@ async function editDiscordEmbed(incident, update, serviceName) {
       }
     );
     if (res.ok) {
-      console.log(`[discord] ✏ Embed editado por comentario admin — incidente: ${incident.id}`);
+      info(`[discord] ✏ Embed updated by admin comment — incident: ${incident.id}`);
     } else {
       const err = await res.text();
-      console.warn(`[discord] ⚠ No se pudo editar embed: ${res.status} — ${err}`);
+      warn(`[discord] ⚠ Could not edit embed: ${res.status} — ${err}`);
     }
   } catch (e) {
-    console.warn("[discord] Error de red al editar embed:", e.message);
+    warn("[discord] Network error editing embed:", e.message);
   }
 }
 
@@ -458,11 +619,11 @@ function verifyTotp(secret, userCode, window = 1) {
 function adminAuth(req, res, next) {
   const token = String(req.headers["x-admin-token"] ?? "").trim();
   const valid = String(getAdminToken() ?? "").trim();
-  if (!valid) return res.status(500).json({ error: "Token de administrador no configurado" });
+  if (!valid) return res.status(500).json({ error: "Admin token not configured" });
   const tokenBuf = Buffer.from(token, "utf8");
   const validBuf = Buffer.from(valid, "utf8");
   if (!token || tokenBuf.length !== validBuf.length || !crypto.timingSafeEqual(tokenBuf, validBuf)) {
-    return res.status(401).json({ error: "Token inválido o ausente" });
+    return res.status(401).json({ error: "Invalid or missing token" });
   }
   next();
 }
@@ -487,7 +648,7 @@ function isValidUrl(url) {
 }
 
 /* ═══════════════════════════════════════════
-   ARCHIVOS ESTÁTICOS
+   STATIC FILES
 ═══════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════
@@ -503,7 +664,7 @@ app.use((req, res, next) => {
   if (path.extname(p)) return next(); // static assets
   if (req.method === "GET") return res.redirect("/setup");
   if (p.startsWith("/admin/api") || p.startsWith("/api"))
-    return res.status(503).json({ error: "No configurado. Completa /setup." });
+    return res.status(503).json({ error: "Not configured. Complete /setup." });
   next();
 });
 
@@ -521,7 +682,7 @@ app.use(express.static(path.join(__dirname, "public"), {
 }));
 
 /* ═══════════════════════════════════════════
-   RUTAS PÚBLICAS
+   PUBLIC ROUTES
 ═══════════════════════════════════════════ */
 
 /* Setup wizard */
@@ -542,16 +703,16 @@ app.get("/uptime", async (_req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store");
     res.json({ ok: true, ...json });
   } catch (err) {
-    console.error("[/uptime] Error:", err.message);
-    res.status(500).json({ ok: false, error: "No se pudo leer status.json" });
+    error("[/uptime] Error:", err.message);
+    res.status(500).json({ ok: false, error: "Could not read status.json" });
   }
 });
 
 /* ═══════════════════════════════════════════
    ADMIN – UI
-   /admin y /admin/ → redirigen a login si no hay sesión (client-side)
-   El HTML de admin solo se sirve; la verificación de sesión es en el cliente.
-   La página de login es login.html (sin nada del panel).
+   /admin and /admin/ → redirect to login if no session (client-side)
+   Admin HTML is served as-is; session verification is done client-side.
+   Login page is login.html (no panel content).
 ═══════════════════════════════════════════ */
 
 app.get("/login",  (_req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
@@ -561,12 +722,12 @@ app.get("/admin",  adminLimiter, (_req, res) => res.sendFile(path.join(__dirname
 app.get("/admin/", adminLimiter, (_req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
 
 app.post("/admin/api/setup", authLimiter, async (req, res) => {
-  if (getAdminToken()) return res.status(403).json({ error: "Ya configurado" });
+  if (getAdminToken()) return res.status(403).json({ error: "Already configured" });
 
   const { adminToken, totpSecret, sections, appearance } = req.body ?? {};
 
   if (typeof adminToken !== "string" || adminToken.length < 16) {
-    return res.status(400).json({ error: "adminToken debe tener al menos 16 caracteres" });
+    return res.status(400).json({ error: "adminToken must be at least 16 characters" });
   }
 
   const updates = { ADMIN_TOKEN: adminToken };
@@ -576,11 +737,11 @@ app.post("/admin/api/setup", authLimiter, async (req, res) => {
   if (Array.isArray(sections)) {
     for (const s of sections) {
       if (!isValidId(s.id) || typeof s.name !== "string" || !Array.isArray(s.services)) {
-        return res.status(400).json({ error: `Sección inválida: ${s.id}` });
+        return res.status(400).json({ error: `Invalid section: ${s.id}` });
       }
       for (const svc of s.services) {
         if (!isValidId(svc.id) || typeof svc.name !== "string" || !isValidUrl(svc.url)) {
-          return res.status(400).json({ error: `Servicio inválido: ${svc.id}` });
+          return res.status(400).json({ error: `Invalid service: ${svc.id}` });
         }
       }
     }
@@ -591,29 +752,38 @@ app.post("/admin/api/setup", authLimiter, async (req, res) => {
   if (appearance && typeof appearance === "object") {
     const VALID_BG = ["image", "solid"];
     if (appearance.backgroundType && !VALID_BG.includes(appearance.backgroundType)) {
-      return res.status(400).json({ error: "backgroundType inválido" });
+      return res.status(400).json({ error: "Invalid backgroundType" });
     }
     for (const f of ["logoUrl", "faviconUrl", "backgroundImageUrl"]) {
       if (appearance[f] && typeof appearance[f] !== "string") {
-        return res.status(400).json({ error: `${f} inválida` });
+        return res.status(400).json({ error: `Invalid ${f}` });
       }
     }
     if (appearance.backgroundSolidColor && !/^#[0-9a-fA-F]{6}$/.test(appearance.backgroundSolidColor)) {
-      return res.status(400).json({ error: "backgroundSolidColor inválido" });
+      return res.status(400).json({ error: "Invalid backgroundSolidColor" });
     }
-    if (appearance.accentColor && !/^#[0-9a-fA-F]{6}$/.test(appearance.accentColor)) {
-      return res.status(400).json({ error: "accentColor inválido" });
+    for (const f of COLOR_FIELDS) {
+      if (appearance[f] && !/^#[0-9a-fA-F]{6}$/.test(appearance[f])) {
+        return res.status(400).json({ error: `Invalid ${f}` });
+      }
     }
     if (appearance.siteTitle && (typeof appearance.siteTitle !== "string" || appearance.siteTitle.length > 128)) {
-      return res.status(400).json({ error: "siteTitle inválido" });
+      return res.status(400).json({ error: "Invalid siteTitle" });
     }
     if (appearance.footerText && (typeof appearance.footerText !== "string" || appearance.footerText.length > 256)) {
-      return res.status(400).json({ error: "footerText inválido" });
+      return res.status(400).json({ error: "Invalid footerText" });
     }
     if (appearance.fontFamily && (typeof appearance.fontFamily !== "string" || appearance.fontFamily.length > 64)) {
-      return res.status(400).json({ error: "fontFamily inválido" });
+      return res.status(400).json({ error: "Invalid fontFamily" });
     }
-    await writeJson(APPEARANCE_FILE, { ...DEFAULT_APPEARANCE, ...appearance });
+    if (appearance.language && appearance.language !== "es" && appearance.language !== "en") {
+      return res.status(400).json({ error: "Invalid language" });
+    }
+    if (appearance.texts !== undefined && (typeof appearance.texts !== "object" || Array.isArray(appearance.texts))) {
+      return res.status(400).json({ error: "Invalid texts" });
+    }
+    await writeJson(APPEARANCE_FILE, normalizeAppearance({ ...DEFAULT_APPEARANCE, ...appearance }));
+    await regenerateIndexHtml();
   }
 
   res.json({ ok: true });
@@ -630,19 +800,19 @@ app.post("/admin/api/auth", authLimiter, async (req, res) => {
   const totpSecret  = process.env.TOTP_SECRET ?? null;
   const adminToken  = getAdminToken();
 
-  if (!adminToken) return res.status(500).json({ ok: false, error: "Servidor no configurado correctamente" });
+  if (!adminToken) return res.status(500).json({ ok: false, error: "Server not configured correctly" });
 
   if (totpSecret) {
     const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
     const totpOk  = code && verifyTotp(totpSecret, String(code).trim());
-    if (!tokenOk) return res.status(401).json({ ok: false, error: "Contraseña incorrecta" });
-    if (!totpOk)  return res.status(401).json({ ok: false, error: "Código TOTP inválido" });
+    if (!tokenOk) return res.status(401).json({ ok: false, error: "Incorrect password" });
+    if (!totpOk)  return res.status(401).json({ ok: false, error: "Invalid TOTP code" });
     return res.json({ ok: true });
   }
 
   const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
   if (tokenOk) return res.json({ ok: true });
-  res.status(401).json({ ok: false, error: "Contraseña incorrecta" });
+  res.status(401).json({ ok: false, error: "Incorrect password" });
 });
 
 /* ═══════════════════════════════════════════
@@ -651,7 +821,7 @@ app.post("/admin/api/auth", authLimiter, async (req, res) => {
 
 app.get("/admin/api/status", adminLimiter, adminAuth, async (_req, res) => {
   try { res.json(await readJson(STATUS_FILE)); }
-  catch { res.status(500).json({ error: "No se pudo leer status.json" }); }
+  catch { res.status(500).json({ error: "Could not read status.json" }); }
 });
 
 /* ═══════════════════════════════════════════
@@ -661,14 +831,91 @@ app.get("/admin/api/status", adminLimiter, adminAuth, async (_req, res) => {
 app.post("/admin/api/force-check", adminLimiter, adminAuth, async (_req, res) => {
   try {
     await fs.writeFile(FORCE_CHECK_FILE, "1");
-    res.json({ ok: true, message: "Force check solicitado. Se actualizará en segundos." });
+    res.json({ ok: true, message: "Force check requested. Will update in seconds." });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
-// Prueba una configuración de servicio sin guardarla ni afectar stats — para validar antes de aplicar.
+// Manual detector restart — requires password re-confirmation (+TOTP if configured),
+// same check used by /admin/api/auth, since this kills a running process.
+app.post("/admin/api/detector/restart", adminLimiter, adminAuth, async (req, res) => {
+  const { token, code } = req.body ?? {};
+  const adminToken = getAdminToken();
+  const totpSecret = process.env.TOTP_SECRET ?? null;
+
+  const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
+  if (!tokenOk) return res.status(401).json({ ok: false, error: "Incorrect password" });
+  if (totpSecret) {
+    const totpOk = code && verifyTotp(totpSecret, String(code).trim());
+    if (!totpOk) return res.status(401).json({ ok: false, error: "Invalid TOTP code" });
+  }
+
+  try {
+    if (detector && !detector.killed) {
+      detectorManualStop = true;
+      detector.once("exit", () => {
+        detectorManualStop = false;
+        detectorRestartCount = 0;
+        spawnDetector();
+      });
+      detector.kill("SIGTERM");
+      setTimeout(() => { if (detector && !detector.killed) detector.kill("SIGKILL"); }, 3000).unref();
+    } else {
+      spawnDetector();
+    }
+    res.json({ ok: true, message: "Detector restarting." });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Resets a service's stats from a given point in time forward — for correcting false positives
+// (e.g. a "fetch failed" streak wrongly recorded as downtime).
+app.post("/admin/api/services/:id/reset-stats", adminLimiter, adminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { from } = req.body ?? {};
+  if (!isValidId(id)) return res.status(400).json({ error: "Invalid service id" });
+  const fromDate = from ? new Date(from) : null;
+  if (from && isNaN(fromDate?.getTime())) return res.status(400).json({ error: "Invalid 'from' date" });
+
+  try {
+    const store = await readJson(STATUS_FILE);
+    const svc = store.services?.[id];
+    if (!svc) return res.status(404).json({ error: "Service not found" });
+
+    const fromIso  = fromDate ? fromDate.toISOString() : null;
+    const fromDate0 = fromDate ? `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}` : null;
+
+    if (fromIso) {
+      svc.hourlyHistory = (svc.hourlyHistory ?? []).filter(h => h.hour < fromIso);
+      svc.dailyHistory  = (svc.dailyHistory  ?? []).filter(d => d.date < fromDate0);
+      if (svc.currentHour && svc.currentHour.startedAt >= fromIso) {
+        svc.currentHour = null;
+      } else if (svc.currentHour) {
+        svc.currentHour.checks = svc.currentHour.checks.filter(c => c.at < fromIso);
+      }
+    } else {
+      // No cutoff = full reset to fresh state (100% uptime, empty history)
+      svc.hourlyHistory = [];
+      svc.dailyHistory  = [];
+      svc.currentHour   = null;
+    }
+
+    svc.onlineper = 100;
+    svc.history   = svc.dailyHistory.map(d => ({ date: d.date, onlineper: d.onlineper }));
+    svc.status    = "up";
+
+    await writeJson(STATUS_FILE, store);
+    info(`[Admin] Stats reset for ${id}${fromIso ? ` from ${fromIso}` : " (full reset)"}`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Tests a service config without saving it or affecting stats — validates before applying.
 app.post("/admin/api/test-check", adminLimiter, adminAuth, async (req, res) => {
   const svc = req.body;
-  if (!svc?.url) return res.status(400).json({ error: "url es requerida" });
+  if (!svc?.url) return res.status(400).json({ error: "url is required" });
   try {
     const result = await pingService(svc);
     res.json(result);
@@ -678,7 +925,7 @@ app.post("/admin/api/test-check", adminLimiter, adminAuth, async (req, res) => {
 });
 
 /* ═══════════════════════════════════════════
-   ADMIN – ANUNCIOS
+   ADMIN – ANNOUNCEMENTS
 ═══════════════════════════════════════════ */
 
 app.get("/admin/api/announcements", adminLimiter, adminAuth, async (_req, res) => {
@@ -688,11 +935,11 @@ app.get("/admin/api/announcements", adminLimiter, adminAuth, async (_req, res) =
 
 app.post("/admin/api/announcements", adminLimiter, adminAuth, async (req, res) => {
   const { type, title, body, endsAt } = req.body;
-  if (!type || !title) return res.status(400).json({ error: "type y title son requeridos" });
+  if (!type || !title) return res.status(400).json({ error: "type and title are required" });
   const VALID_TYPES = ["maintenance", "incident", "info"];
-  if (!VALID_TYPES.includes(type)) return res.status(400).json({ error: "type inválido" });
-  if (typeof title !== "string" || title.length > 256) return res.status(400).json({ error: "title inválido o demasiado largo" });
-  if (endsAt && isNaN(new Date(endsAt).getTime())) return res.status(400).json({ error: "endsAt no es una fecha válida" });
+  if (!VALID_TYPES.includes(type)) return res.status(400).json({ error: "Invalid type" });
+  if (typeof title !== "string" || title.length > 256) return res.status(400).json({ error: "Invalid or too long title" });
+  if (endsAt && isNaN(new Date(endsAt).getTime())) return res.status(400).json({ error: "endsAt is not a valid date" });
 
   const store = await readJson(STATUS_FILE);
   store.announcements ??= [];
@@ -709,17 +956,17 @@ app.post("/admin/api/announcements", adminLimiter, adminAuth, async (req, res) =
 
 app.delete("/admin/api/announcements/:id", adminLimiter, adminAuth, async (req, res) => {
   const { id } = req.params;
-  if (!isValidId(id)) return res.status(400).json({ error: "ID inválido" });
+  if (!isValidId(id)) return res.status(400).json({ error: "Invalid ID" });
   const store = await readJson(STATUS_FILE);
   const before = (store.announcements ?? []).length;
   store.announcements = (store.announcements ?? []).filter(a => a.id !== id);
-  if (store.announcements.length === before) return res.status(404).json({ error: "Anuncio no encontrado" });
+  if (store.announcements.length === before) return res.status(404).json({ error: "Announcement not found" });
   await writeJson(STATUS_FILE, store);
   res.json({ ok: true });
 });
 
 /* ═══════════════════════════════════════════
-   ADMIN – INCIDENTES
+   ADMIN – INCIDENTS
 ═══════════════════════════════════════════ */
 
 app.get("/admin/api/incidents", adminLimiter, adminAuth, async (_req, res) => {
@@ -730,11 +977,11 @@ app.get("/admin/api/incidents", adminLimiter, adminAuth, async (_req, res) => {
 app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
   const { title, status = "investigating", message, serviceId, serviceName } = req.body;
   if (!title || typeof title !== "string" || title.length > 256) {
-    return res.status(400).json({ error: "title es requerido (máx 256 chars)" });
+    return res.status(400).json({ error: "title is required (max 256 chars)" });
   }
   const VALID_STATUSES = ["investigating", "identified", "monitoring", "resolved", "maintenance"];
-  if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: "status inválido" });
-  if (serviceId && !isValidId(serviceId)) return res.status(400).json({ error: "serviceId inválido" });
+  if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
+  if (serviceId && !isValidId(serviceId)) return res.status(400).json({ error: "Invalid serviceId" });
 
   const store      = await readJson(STATUS_FILE);
   const now        = new Date().toISOString();
@@ -748,7 +995,7 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
     serviceName: typeof serviceName === "string" ? serviceName.trim().slice(0, 128) : null,
     title: title.trim(), status, automatic: false, createdAt: now, resolvedAt: null,
     discordMessageId: null,
-    updates: [{ at: now, status, message: typeof message === "string" ? message.trim() : "Incidente creado manualmente." }],
+    updates: [{ at: now, status, message: typeof message === "string" ? message.trim() : "Incident created manually." }],
   };
 
   store.incidents.push(incident);
@@ -762,25 +1009,26 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
 
   await writeJson(STATUS_FILE, store);
 
-  // Intentar enviar embed inicial a Discord (incidente manual)
+  // Try to send initial embed to Discord (manual incident)
   const token     = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
   if (token && channelId) {
+    const appearance = await readAppearance();
     const colors = { investigating: 0xef4444, identified: 0xf97316, monitoring: 0xf59e0b, resolved: 0x22c55e, maintenance: 0x3b82f6 };
-    const statusLabels = { investigating: "🔍 Investigando", identified: "🔎 Identificado", monitoring: "🟡 Monitoreando", resolved: "✅ Resuelto", maintenance: "🔧 Mantenimiento" };
+    const statusLabels = { investigating: "🔍 Investigating", identified: "🔎 Identified", monitoring: "🟡 Monitoring", resolved: "✅ Resolved", maintenance: "🔧 Maintenance" };
     try {
       const dres = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
         method: "POST",
         headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ embeds: [{
-          title: `📋 Incidente — ${incident.title}`,
-          description: typeof message === "string" ? message.trim() : "Incidente creado manualmente.",
+          title: `📋 Incident — ${incident.title}`,
+          description: typeof message === "string" ? message.trim() : "Incident created manually.",
           color: colors[status] ?? 0x6b7280,
           timestamp: now,
-          footer: { text: `Nexora Status • ID: ${incidentId}` },
+          footer: { text: embedText(appearance, "embed-footer", { id: incidentId }) },
           fields: [
-            { name: "Servicio", value: incident.serviceName ?? "—",        inline: true },
-            { name: "Estado",   value: statusLabels[status] ?? status,     inline: true },
+            { name: "Service", value: incident.serviceName ?? "—",        inline: true },
+            { name: "Status",   value: statusLabels[status] ?? status,     inline: true },
           ],
         }] }),
       });
@@ -788,36 +1036,36 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
         const dmsg = await dres.json();
         if (dmsg?.id) {
           incident.discordMessageId = dmsg.id;
-          // Re-guardar con el messageId
+          // Re-save with messageId
           const fresh = await readJson(STATUS_FILE);
           const inc = fresh.incidents?.find(i => i.id === incidentId);
           if (inc) { inc.discordMessageId = dmsg.id; await writeJson(STATUS_FILE, fresh); }
-          console.log(`[discord] 📨 Embed enviado para incidente manual ${incidentId} (msg: ${dmsg.id})`);
+          info(`[discord] 📨 Embed sent for manual incident ${incidentId} (msg: ${dmsg.id})`);
         }
       }
     } catch (e) {
-      console.warn("[discord] Error al enviar embed de incidente manual:", e.message);
+      warn("[discord] Error sending manual incident embed:", e.message);
     }
   }
 
   res.json(incident);
 });
 
-/* ── Añadir comentario/actualización a incidente ── */
+/* ── Add comment/update to incident ── */
 app.post("/admin/api/incidents/:id/updates", adminLimiter, adminAuth, async (req, res) => {
   const { id } = req.params;
-  if (!isValidId(id)) return res.status(400).json({ error: "ID inválido" });
+  if (!isValidId(id)) return res.status(400).json({ error: "Invalid ID" });
 
   const { status, message } = req.body;
   if (!message || typeof message !== "string" || message.length > 2048) {
-    return res.status(400).json({ error: "message es requerido (máx 2048 chars)" });
+    return res.status(400).json({ error: "message is required (max 2048 chars)" });
   }
   const VALID_STATUSES = ["investigating", "identified", "monitoring", "resolved", "maintenance"];
-  if (status && !VALID_STATUSES.includes(status)) return res.status(400).json({ error: "status inválido" });
+  if (status && !VALID_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
 
   const store = await readJson(STATUS_FILE);
   const inc   = (store.incidents ?? []).find(i => i.id === id);
-  if (!inc) return res.status(404).json({ error: "Incidente no encontrado" });
+  if (!inc) return res.status(404).json({ error: "Incident not found" });
 
   const now = new Date().toISOString();
   const update = { at: now, status: status ?? inc.status, message: message.trim() };
@@ -842,18 +1090,18 @@ app.post("/admin/api/incidents/:id/updates", adminLimiter, adminAuth, async (req
 
 app.delete("/admin/api/incidents/:id", adminLimiter, adminAuth, async (req, res) => {
   const { id } = req.params;
-  if (!isValidId(id)) return res.status(400).json({ error: "ID inválido" });
+  if (!isValidId(id)) return res.status(400).json({ error: "Invalid ID" });
   const store = await readJson(STATUS_FILE);
   const before = (store.incidents ?? []).length;
   store.incidents     = (store.incidents     ?? []).filter(i => i.id !== id);
   store.announcements = (store.announcements ?? []).filter(a => a.incidentId !== id);
-  if (store.incidents.length === before) return res.status(404).json({ error: "Incidente no encontrado" });
+  if (store.incidents.length === before) return res.status(404).json({ error: "Incident not found" });
   await writeJson(STATUS_FILE, store);
   res.json({ ok: true });
 });
 
 /* ═══════════════════════════════════════════
-   ADMIN – SERVICIOS
+   ADMIN – SERVICES
 ═══════════════════════════════════════════ */
 
 app.get("/admin/api/services", adminLimiter, adminAuth, async (_req, res) => {
@@ -863,28 +1111,28 @@ app.get("/admin/api/services", adminLimiter, adminAuth, async (_req, res) => {
 
 app.put("/admin/api/services", adminLimiter, adminAuth, async (req, res) => {
   const { sections } = req.body;
-  if (!Array.isArray(sections)) return res.status(400).json({ error: "sections debe ser un array" });
+  if (!Array.isArray(sections)) return res.status(400).json({ error: "sections must be an array" });
   for (const s of sections) {
     if (!isValidId(s.id) || typeof s.name !== "string" || !Array.isArray(s.services)) {
-      return res.status(400).json({ error: `Sección inválida: ${s.id}` });
+      return res.status(400).json({ error: `Invalid section: ${s.id}` });
     }
-    if (s.name.length > 128) return res.status(400).json({ error: "Nombre de sección demasiado largo" });
+    if (s.name.length > 128) return res.status(400).json({ error: "Section name too long" });
     for (const svc of s.services) {
       if (!isValidId(svc.id) || typeof svc.name !== "string" || !svc.url) {
-        return res.status(400).json({ error: `Servicio inválido en sección ${s.id}: ${svc.id}` });
+        return res.status(400).json({ error: `Invalid service in section ${s.id}: ${svc.id}` });
       }
       if (!isValidUrl(svc.url)) {
-        return res.status(400).json({ error: `URL inválida para servicio ${svc.id}: ${svc.url}` });
+        return res.status(400).json({ error: `Invalid URL for service ${svc.id}: ${svc.url}` });
       }
     }
   }
   await writeJson(SERVICES_FILE, { sections });
   try { await fs.writeFile(FORCE_CHECK_FILE, "1"); } catch {}
-  res.json({ ok: true, message: "Guardado. Iniciando re-scan inmediato..." });
+  res.json({ ok: true, message: "Saved. Starting immediate re-scan..." });
 });
 
 /* ═══════════════════════════════════════════
-   ADMIN – SETTINGS (lee/escribe .env)
+   ADMIN – SETTINGS (reads/writes .env)
 ═══════════════════════════════════════════ */
 
 app.get("/admin/api/settings", adminLimiter, adminAuth, async (_req, res) => {
@@ -906,13 +1154,13 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   const { discordBotToken, discordChannelId, discordStatusChannelId, discordStatusServices, adminToken, totpSecret } = req.body;
 
   if (discordChannelId && !/^\d{1,25}$/.test(discordChannelId)) {
-    return res.status(400).json({ error: "discordChannelId inválido" });
+    return res.status(400).json({ error: "Invalid discordChannelId" });
   }
   if (discordStatusChannelId && !/^\d{1,25}$/.test(discordStatusChannelId)) {
-    return res.status(400).json({ error: "discordStatusChannelId inválido" });
+    return res.status(400).json({ error: "Invalid discordStatusChannelId" });
   }
   if (adminToken && IS_PROD && adminToken.length < 16) {
-    return res.status(400).json({ error: "adminToken debe tener al menos 16 caracteres" });
+    return res.status(400).json({ error: "adminToken must be at least 16 characters" });
   }
 
   const updates = {};
@@ -932,7 +1180,7 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
 
 app.post("/admin/api/discord/reload", adminLimiter, adminAuth, async (_req, res) => {
   const token = process.env.DISCORD_BOT_TOKEN;
-  if (!token) return res.status(400).json({ error: "No hay token de Discord configurado" });
+  if (!token) return res.status(400).json({ error: "No Discord token configured" });
   const result = await verifyBotToken(token);
   if (result.ok) return res.json({ ok: true, username: result.username });
   return res.status(502).json({ error: result.error || `Estado ${result.status}` });
@@ -941,15 +1189,15 @@ app.post("/admin/api/discord/reload", adminLimiter, adminAuth, async (_req, res)
 app.post("/admin/api/discord/test", adminLimiter, adminAuth, async (_req, res) => {
   const token = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
-  if (!token || !channelId) return res.status(400).json({ error: "Faltan credenciales de Discord" });
+  if (!token || !channelId) return res.status(400).json({ error: "Missing Discord credentials" });
   const dres = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: "POST",
     headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: "🧪 Test de notificaciones de Nexora Status" }),
+    body: JSON.stringify({ content: "🧪 Notification test of NexStatus" }),
   });
   if (!dres.ok) {
     const err = await dres.text();
-    return res.status(502).json({ error: err || "No se pudo enviar el mensaje de prueba" });
+    return res.status(502).json({ error: err || "Could not send test message" });
   }
   res.json({ ok: true });
 });
@@ -971,33 +1219,49 @@ app.put("/admin/api/appearance", adminLimiter, adminAuth, async (req, res) => {
   const body = req.body ?? {};
   const VALID_BG = ["image", "solid"];
   if (body.backgroundType && !VALID_BG.includes(body.backgroundType)) {
-    return res.status(400).json({ error: "backgroundType inválido" });
+    return res.status(400).json({ error: "Invalid backgroundType" });
   }
   for (const f of ["logoUrl", "faviconUrl", "backgroundImageUrl"]) {
     if (body[f] && !isValidUrl(body[f]) && !/^\/[\w./-]+$/.test(body[f])) {
-      return res.status(400).json({ error: `${f} inválida` });
+      return res.status(400).json({ error: `Invalid ${f}` });
     }
   }
   if (body.backgroundSolidColor && !/^#[0-9a-fA-F]{6}$/.test(body.backgroundSolidColor)) {
-    return res.status(400).json({ error: "backgroundSolidColor inválido" });
+    return res.status(400).json({ error: "Invalid backgroundSolidColor" });
   }
-  if (body.accentColor && !/^#[0-9a-fA-F]{6}$/.test(body.accentColor)) {
-    return res.status(400).json({ error: "accentColor inválido" });
+  for (const f of COLOR_FIELDS) {
+    if (body[f] && !/^#[0-9a-fA-F]{6}$/.test(body[f])) {
+      return res.status(400).json({ error: `Invalid ${f}` });
+    }
   }
   if (body.siteTitle && (typeof body.siteTitle !== "string" || body.siteTitle.length > 128)) {
-    return res.status(400).json({ error: "siteTitle inválido" });
+    return res.status(400).json({ error: "Invalid siteTitle" });
   }
   if (body.footerText && (typeof body.footerText !== "string" || body.footerText.length > 256)) {
-    return res.status(400).json({ error: "footerText inválido" });
+    return res.status(400).json({ error: "Invalid footerText" });
   }
   if (body.fontFamily && (typeof body.fontFamily !== "string" || body.fontFamily.length > 64)) {
-    return res.status(400).json({ error: "fontFamily inválido" });
+    return res.status(400).json({ error: "Invalid fontFamily" });
+  }
+  if (body.language && body.language !== "es" && body.language !== "en") {
+    return res.status(400).json({ error: "Invalid language" });
+  }
+  if (body.texts !== undefined && (typeof body.texts !== "object" || Array.isArray(body.texts))) {
+    return res.status(400).json({ error: "Invalid texts" });
   }
 
   const current = await readAppearance();
-  const next    = { ...current, ...body };
+  const next    = normalizeAppearance({ ...current, ...body });
   await writeJson(APPEARANCE_FILE, next);
+  await regenerateIndexHtml();
   res.json({ ok: true, appearance: next });
+});
+
+// Rebuilds public/index.html from the pristine base template — use if the
+// file was manually edited/corrupted and no longer reflects saved appearance.
+app.post("/admin/api/appearance/rebuild-index", adminLimiter, adminAuth, async (_req, res) => {
+  await regenerateIndexHtml();
+  res.json({ ok: true });
 });
 
 /* ═══════════════════════════════════════════
@@ -1014,8 +1278,8 @@ app.use((_req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  console.error("[Server] Error no manejado:", err.message);
-  res.status(500).json({ error: "Error interno del servidor" });
+  error("[Server] Error no manejado:", err.message);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 /* ═══════════════════════════════════════════
@@ -1024,6 +1288,7 @@ app.use((err, _req, res, _next) => {
 
 (async () => {
   await loadEnv();
+  await regenerateIndexHtml();
   if (process.env.DISCORD_BOT_TOKEN) {
     await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
   }
@@ -1035,12 +1300,13 @@ app.use((err, _req, res, _next) => {
     info(`[Web Server] http://localhost:${PORT}`);
     info(`[Admin Panel] http://localhost:${PORT}/admin`);
     info(`[Login Page] http://localhost:${PORT}/login`);
-    if (!IS_PROD) info("[Server] Modo desarrollo — logs extendidos activos");
+    if (!IS_PROD) info("[Server] Development mode — extended logs active.");
   });
 })();
 
 function shutdown(signal) {
-  console.log(`\n[Server] Apagando (${signal})...`);
+  info(`\n[Server] Shutting down (${signal})...`);
+  detectorManualStop = true;
   if (detector && !detector.killed) {
     detector.kill("SIGTERM");
     setTimeout(() => { if (!detector.killed) detector.kill("SIGKILL"); process.exit(0); }, 3000).unref();
@@ -1052,5 +1318,5 @@ function shutdown(signal) {
 
 process.on("SIGINT",  () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("uncaughtException", err => { console.error("[Server] uncaughtException:", err); });
-process.on("unhandledRejection", (reason) => { console.error("[Server] unhandledRejection:", reason); });
+process.on("uncaughtException", err => { error("[Server] uncaughtException:", err); });
+process.on("unhandledRejection", (reason) => { error("[Server] unhandledRejection:", reason); });

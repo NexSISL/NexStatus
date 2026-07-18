@@ -1,7 +1,7 @@
 /**
- * Checkers – lógica de ping por servicio (http, tcp, udp, ping, dns, keyword)
- * Extraído de detector.js para poder reutilizarse en server.js (test de config)
- * sin arrancar el loop del detector.
+ * Checkers – per-service ping logic (http, tcp, udp, ping, dns, keyword)
+ * Extracted from detector.js for reuse in server.js (config testing)
+ * without starting the detector loop.
  */
 
 import net from "net";
@@ -135,7 +135,9 @@ export async function pingService(service) {
       return { status: "up", code: res.status, latency };
     } catch (err) {
       const reason = err.name === "AbortError" ? "timeout" : "network";
-      return { status: "down", code: 0, latency: null, error: reason, debug: { exception: err.message } };
+      // undici wraps real cause (ECONNRESET, socket hang up, etc.) in err.cause; err.message alone is just "fetch failed".
+      const causeCode = err.cause?.code ?? err.cause?.message ?? null;
+      return { status: "down", code: 0, latency: null, error: reason, debug: { exception: err.message, cause: causeCode } };
     } finally {
       clearTimeout(timer);
     }
@@ -158,7 +160,7 @@ export function tcpPing(host, port) {
   });
 }
 
-// UDP: no hay "connect" real, se considera up si el socket puede enviar sin ECONNREFUSED/error inmediato.
+// UDP: there is no real "connect"; it is considered up if the socket can send without immediate ECONNREFUSED/error.
 function udpPing(host, port) {
   return new Promise(resolve => {
     const start  = Date.now();
@@ -172,7 +174,7 @@ function udpPing(host, port) {
     });
 
     socket.send(Buffer.from("ping"), port, host, (err) => {
-      if (err) return; // manejado por "error"
+      if (err) return; // handled by "error"
       clearTimeout(timer);
       socket.close();
       resolve({ status: "up", code: 1, latency: Date.now() - start });
@@ -180,7 +182,7 @@ function udpPing(host, port) {
   });
 }
 
-// ICMP requiere privilegios raw socket → se usa binario "ping" del sistema.
+// ICMP requires raw socket privileges → system binary "ping" is used.
 function icmpPing(host) {
   return new Promise(resolve => {
     const start   = Date.now();

@@ -73,6 +73,24 @@ window.__appearanceReady = (async function applyAppearance() {
     const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16)).join(" ");
     root.setProperty("--accent", rgb);
   }
+  const COLOR_VAR_MAP = {
+    accentStrongColor: "--accent-strong",
+    bgColor1:           "--bg-1",
+    bgColor2:           "--bg-2",
+    cardColor:          "--card-bg",
+    mutedColor:         "--muted",
+    successColor:       "--success",
+    dangerColor:        "--danger",
+    warningColor:       "--warning",
+    infoColor:          "--info",
+  };
+  for (const [key, cssVar] of Object.entries(COLOR_VAR_MAP)) {
+    const hex = appearance[key];
+    if (!hex) continue;
+    const h = hex.replace("#", "");
+    const rgb = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(" ");
+    root.setProperty(cssVar, rgb);
+  }
   if (appearance.backgroundType === "solid" && appearance.backgroundSolidColor) {
     root.setProperty("--page-bg-image", "none");
     root.setProperty("--page-bg-solid", appearance.backgroundSolidColor);
@@ -81,7 +99,7 @@ window.__appearanceReady = (async function applyAppearance() {
   }
 
   if (appearance.siteTitle) {
-    document.title = `${appearance.siteTitle} – Nexora`;
+    document.title = appearance.siteTitle;
     const titleEl = document.getElementById("brand-title");
     if (titleEl) titleEl.textContent = appearance.siteTitle;
   }
@@ -102,4 +120,5 @@ window.__appearanceReady = (async function applyAppearance() {
   if (viewHome) viewHome.hidden = false;
   window.__STATUS_TEXTS__ = texts;
   window.__STATUS_LANG__ = lang;
+  window.__APPEARANCE__ = appearance;
 })();

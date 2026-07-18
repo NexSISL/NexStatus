@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nexora Admin</title>
+  <title>Status Admin</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -523,13 +523,13 @@
     <!-- TOPBAR -->
     <header class="topbar">
       <div class="topbar-brand">
-        <img src="/icon.svg" alt="Nexora"/>
-        Nexora
+        <img src="/icon.svg" alt="Status" id="topbar-logo"/>
+        <span id="topbar-brand-name">Status</span>
         <span class="topbar-badge">Admin</span>
       </div>
       <div class="topbar-spacer"></div>
       <a href="/" target="_blank" class="topbar-link">
-        <i class="fa-solid fa-arrow-up-right-from-square"></i> Ver página pública
+        <i class="fa-solid fa-arrow-up-right-from-square"></i> View public page
       </a>
       <button class="topbar-logout" id="logout-btn">
         <i class="fa-solid fa-right-from-bracket"></i> Salir
@@ -543,22 +543,22 @@
         <i class="fa-solid fa-gauge"></i> Dashboard
       </button>
 
-      <span class="nav-section-label">Contenido</span>
+      <span class="nav-section-label">Content</span>
       <button class="nav-item" data-page="announcements">
-        <i class="fa-solid fa-bullhorn"></i> Anuncios
+        <i class="fa-solid fa-bullhorn"></i> Announcements
       </button>
       <button class="nav-item" data-page="incidents">
-        <i class="fa-solid fa-triangle-exclamation"></i> Incidentes
+        <i class="fa-solid fa-triangle-exclamation"></i> Incidents
       </button>
 
-      <span class="nav-section-label">Infraestructura</span>
+      <span class="nav-section-label">Infrastructure</span>
       <button class="nav-item" data-page="monitors">
-        <i class="fa-solid fa-server"></i> Monitores
+        <i class="fa-solid fa-server"></i> Monitors
       </button>
 
-      <span class="nav-section-label">Sistema</span>
+      <span class="nav-section-label">System</span>
       <button class="nav-item" data-page="settings">
-        <i class="fa-solid fa-sliders"></i> Configuración
+        <i class="fa-solid fa-sliders"></i> Settings
       </button>
     </nav>
 
@@ -570,50 +570,50 @@
         <div class="page-header">
           <div>
             <div class="page-title">Dashboard</div>
-            <div class="page-subtitle" id="dash-updated">Cargando...</div>
+            <div class="page-subtitle" id="dash-updated">Loading...</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn btn-ghost" id="refresh-btn">
-              <i class="fa-solid fa-rotate-right"></i> Actualizar
+              <i class="fa-solid fa-rotate-right"></i> Update
             </button>
             <button class="btn btn-primary" id="force-check-btn">
-              <i class="fa-solid fa-bolt"></i> Forzar check
+              <i class="fa-solid fa-bolt"></i> Force check
             </button>
           </div>
         </div>
 
         <div class="stats-row">
           <div class="stat-card">
-            <div class="stat-label">Servicios operativos</div>
+            <div class="stat-label">Services operational</div>
             <div class="stat-value green" id="stat-up">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Servicios caídos</div>
+            <div class="stat-label">Services down</div>
             <div class="stat-value red" id="stat-down">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Incidentes activos</div>
+            <div class="stat-label">Active incidents</div>
             <div class="stat-value yellow" id="stat-incidents">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Disponibilidad total</div>
+            <div class="stat-label">Overall availability</div>
             <div class="stat-value blue" id="stat-uptime">—</div>
           </div>
         </div>
 
         <div class="data-table">
           <div class="data-table-header">
-            <div class="data-table-title">Estado de servicios</div>
+            <div class="data-table-title">Service status</div>
           </div>
           <table>
             <thead>
               <tr>
-                <th>Servicio</th>
-                <th>Sección</th>
-                <th>Estado</th>
-                <th>Latencia</th>
-                <th>Uptime hoy</th>
-                <th>Última verificación</th>
+                <th>Service</th>
+                <th>Section</th>
+                <th>Status</th>
+                <th>Latency</th>
+                <th>Uptime today</th>
+                <th>Last check</th>
               </tr>
             </thead>
             <tbody id="dash-services-table"></tbody>
@@ -625,11 +625,11 @@
       <div class="page" id="page-announcements">
         <div class="page-header">
           <div>
-            <div class="page-title">Anuncios</div>
-            <div class="page-subtitle">Banners visibles en la página de status</div>
+            <div class="page-title">Announcements</div>
+            <div class="page-subtitle">Banners visible on the status page</div>
           </div>
           <button class="btn btn-primary" id="new-announcement-btn">
-            <i class="fa-solid fa-plus"></i> Nuevo anuncio
+            <i class="fa-solid fa-plus"></i> New announcement
           </button>
         </div>
 
@@ -637,10 +637,10 @@
           <table>
             <thead>
               <tr>
-                <th>Tipo</th>
-                <th>Título</th>
-                <th>Creado</th>
-                <th>Expira</th>
+                <th>Type</th>
+                <th>Title</th>
+                <th>Created</th>
+                <th>Expires</th>
                 <th></th>
               </tr>
             </thead>
@@ -648,7 +648,7 @@
           </table>
           <div id="announcements-empty" class="empty-state" style="display:none;">
             <i class="fa-solid fa-bullhorn"></i>
-            No hay anuncios activos
+            No active announcements
           </div>
         </div>
       </div>
@@ -657,11 +657,11 @@
       <div class="page" id="page-incidents">
         <div class="page-header">
           <div>
-            <div class="page-title">Incidentes</div>
-            <div class="page-subtitle">Activos e historial reciente</div>
+            <div class="page-title">Incidents</div>
+            <div class="page-subtitle">Active and recent history</div>
           </div>
           <button class="btn btn-primary" id="new-incident-btn">
-            <i class="fa-solid fa-plus"></i> Nuevo incidente
+            <i class="fa-solid fa-plus"></i> New incident
           </button>
         </div>
 
@@ -669,11 +669,11 @@
           <table>
             <thead>
               <tr>
-                <th>Título</th>
-                <th>Estado</th>
-                <th>Servicio</th>
-                <th>Creado</th>
-                <th>Resuelto</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Service</th>
+                <th>Created</th>
+                <th>Resolved</th>
                 <th></th>
               </tr>
             </thead>
@@ -681,7 +681,7 @@
           </table>
           <div id="incidents-empty" class="empty-state" style="display:none;">
             <i class="fa-solid fa-circle-check"></i>
-            No hay incidentes registrados
+            No incidents recorded
           </div>
         </div>
       </div>
@@ -690,21 +690,21 @@
       <div class="page" id="page-monitors">
         <div class="page-header">
           <div>
-            <div class="page-title">Monitores</div>
-            <div class="page-subtitle">Secciones y servicios monitoreados</div>
+            <div class="page-title">Monitors</div>
+            <div class="page-subtitle">Sections and monitored services</div>
           </div>
           <div style="display:flex;gap:10px;">
             <button class="btn btn-ghost" id="add-section-btn">
-              <i class="fa-solid fa-layer-group"></i> Nueva sección
+              <i class="fa-solid fa-layer-group"></i> New section
             </button>
             <button class="btn btn-primary" id="save-monitors-btn">
-              <i class="fa-solid fa-floppy-disk"></i> Guardar cambios
+              <i class="fa-solid fa-floppy-disk"></i> Save changes
             </button>
           </div>
         </div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">
           <i class="fa-solid fa-circle-info"></i>
-          Los cambios se aplican en el siguiente ciclo de monitoreo (~1 minuto).
+          Changes apply on the next monitoring cycle (~1 minute).
         </p>
         <div id="sections-editor"></div>
       </div>
@@ -713,8 +713,8 @@
       <div class="page" id="page-settings">
         <div class="page-header">
           <div>
-            <div class="page-title">Configuración</div>
-            <div class="page-subtitle">Discord, autenticación y preferencias</div>
+            <div class="page-title">Settings</div>
+            <div class="page-subtitle">Discord, authentication and preferences</div>
           </div>
         </div>
 
@@ -723,69 +723,79 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Bot Token</label>
-              <input class="form-input" type="password" id="cfg-discord-token" placeholder="Pega tu bot token aquí"/>
-              <div class="form-hint">Solo actualiza si cambias el token. Si está en blanco, se mantiene el actual.</div>
+              <input class="form-input" type="password" id="cfg-discord-token" placeholder="Paste your bot token here"/>
+              <div class="form-hint">Only update if you change the token. If blank, the current one is kept.</div>
             </div>
             <div class="form-group">
               <label class="form-label">Channel ID</label>
               <input class="form-input" type="text" id="cfg-discord-channel" placeholder="123456789012345678"/>
-              <div class="form-hint">ID del canal donde se enviarán notificaciones de incidentes.</div>
+              <div class="form-hint">Channel ID where incident notifications will be sent.</div>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Canal de estado (ID)</label>
+              <label class="form-label">Status channel (ID)</label>
               <input class="form-input" type="text" id="cfg-discord-status-channel" placeholder="123456789012345678"/>
-              <div class="form-hint">Canal donde se envía el embed de estado del sistema.</div>
+              <div class="form-hint">Channel where the system status embed is sent.</div>
             </div>
           </div>
           <div class="form-group" style="margin-bottom:12px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <label class="form-label" style="margin:0;">Servicios en el embed de estado</label>
+              <label class="form-label" style="margin:0;">Services on the status embed</label>
               <button type="button" class="btn btn-ghost" id="discord-services-edit-btn" style="padding:6px 12px;font-size:12px;gap:4px;">
-                <i class="fa-solid fa-edit"></i> Editar orden
+                <i class="fa-solid fa-edit"></i> Edit order
               </button>
             </div>
             <div id="discord-status-services-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:32px;padding:8px 0;"></div>
-            <div class="form-hint">Los servicios se mostrarán en el orden que selecciones. Si no seleccionas ninguno, aparecerán todos.</div>
+            <div class="form-hint">Services will appear in the order you select. If none selected, all will appear.</div>
           </div>
           <div id="discord-status" style="font-size:13px;color:var(--muted);margin-bottom:16px;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-ghost" id="discord-reload-btn" style="gap:6px;"><i class="fa-solid fa-rotate"></i> Recargar bot</button>
+            <button class="btn btn-ghost" id="discord-reload-btn" style="gap:6px;"><i class="fa-solid fa-rotate"></i> Reload bot</button>
             <button class="btn btn-ghost" id="discord-test-btn" style="gap:6px;"><i class="fa-solid fa-vial"></i> Test</button>
-            <button class="btn btn-ghost" id="discord-send-status-btn" style="gap:6px;"><i class="fa-solid fa-paper-plane"></i> Enviar embed de estado</button>
+            <button class="btn btn-ghost" id="discord-send-status-btn" style="gap:6px;"><i class="fa-solid fa-paper-plane"></i> Send status embed</button>
           </div>
         </div>
 
         <div class="settings-card">
-          <div class="settings-card-title"><i class="fa-solid fa-lock"></i> Autenticación</div>
+          <div class="settings-card-title"><i class="fa-solid fa-lock"></i> Authentication</div>
           <div class="form-group">
-            <label class="form-label">Nuevo token de admin (sesión)</label>
-            <input class="form-input" type="password" id="cfg-admin-token" placeholder="Dejar vacío para no cambiar"/>
-            <div class="form-hint">Mínimo 16 caracteres. Token interno de sesión.</div>
+            <label class="form-label">New admin token (session)</label>
+            <input class="form-input" type="password" id="cfg-admin-token" placeholder="Leave blank to keep current"/>
+            <div class="form-hint">Minimum 16 characters. Internal session token.</div>
           </div>
           <div class="form-group">
             <label class="form-label">TOTP Secret (Base32)</label>
             <input class="form-input" type="password" id="cfg-totp-secret" placeholder="JBSWY3DPEHPK3PXP"/>
-            <div class="form-hint" id="totp-hint">Genera un secret con Google Authenticator o similar. Si se configura, el login usará código TOTP de 6 dígitos.</div>
+            <div class="form-hint" id="totp-hint">Generate a secret with Google Authenticator or similar. If set, login will use a 6-digit TOTP code.</div>
           </div>
         </div>
 
         <button class="btn btn-primary" id="save-settings-btn">
-          <i class="fa-solid fa-floppy-disk"></i> Guardar configuración
+          <i class="fa-solid fa-floppy-disk"></i> Save settings
         </button>
 
         <div class="settings-card" style="margin-top:24px;">
-          <div class="settings-card-title"><i class="fa-solid fa-palette"></i> Apariencia</div>
+          <div class="settings-card-title"><i class="fa-solid fa-power-off"></i> Detector</div>
+          <div class="form-hint" style="margin-bottom:12px;">
+            Restarts the background monitoring process. Use if checks are stuck or repeatedly failing with generic network errors.
+          </div>
+          <button class="btn btn-danger" id="restart-detector-btn">
+            <i class="fa-solid fa-rotate-right"></i> Restart detector
+          </button>
+        </div>
+
+        <div class="settings-card" style="margin-top:24px;">
+          <div class="settings-card-title"><i class="fa-solid fa-palette"></i> Appearance</div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Nombre del sitio</label>
-              <input class="form-input" type="text" id="ap-site-title" placeholder="Estado del sistema"/>
+              <label class="form-label">Site name</label>
+              <input class="form-input" type="text" id="ap-site-title" placeholder="System Status"/>
             </div>
             <div class="form-group">
-              <label class="form-label">Texto del footer</label>
-              <input class="form-input" type="text" id="ap-footer-text" placeholder="© Nexora – Status Monitor"/>
+              <label class="form-label">Footer text</label>
+              <input class="form-input" type="text" id="ap-footer-text" placeholder="© Status Monitor"/>
             </div>
           </div>
 
@@ -802,25 +812,25 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Tipo de fondo</label>
+              <label class="form-label">Background type</label>
               <select class="form-input" id="ap-bg-type">
-                <option value="image">Imagen</option>
-                <option value="solid">Color sólido</option>
+                <option value="image">Image</option>
+                <option value="solid">Solid color</option>
               </select>
             </div>
             <div class="form-group" id="ap-bg-image-group">
-              <label class="form-label">URL imagen de fondo</label>
-              <input class="form-input" type="text" id="ap-bg-image" placeholder="https://.../fondo.webp"/>
+              <label class="form-label">Background image URL</label>
+              <input class="form-input" type="text" id="ap-bg-image" placeholder="https://.../background.webp"/>
             </div>
             <div class="form-group" id="ap-bg-solid-group" style="display:none;">
-              <label class="form-label">Color sólido</label>
+              <label class="form-label">Solid color</label>
               <input class="form-input" type="color" id="ap-bg-solid" style="height:40px;padding:4px;"/>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Fuente</label>
+              <label class="form-label">Font</label>
               <select class="form-input" id="ap-font-family">
                 <option value="Inter">Inter</option>
                 <option value="Roboto">Roboto</option>
@@ -831,15 +841,79 @@
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Color de acento</label>
+              <label class="form-label">Accent color</label>
               <input class="form-input" type="color" id="ap-accent-color" style="height:40px;padding:4px;"/>
             </div>
+            <div class="form-group">
+              <label class="form-label">Accent (strong)</label>
+              <input class="form-input" type="color" id="ap-accent-strong-color" style="height:40px;padding:4px;"/>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Background gradient 1</label>
+              <input class="form-input" type="color" id="ap-bg1-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Background gradient 2</label>
+              <input class="form-input" type="color" id="ap-bg2-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Card color</label>
+              <input class="form-input" type="color" id="ap-card-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Muted text color</label>
+              <input class="form-input" type="color" id="ap-muted-color" style="height:40px;padding:4px;"/>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Success color</label>
+              <input class="form-input" type="color" id="ap-success-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Danger color</label>
+              <input class="form-input" type="color" id="ap-danger-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Warning color</label>
+              <input class="form-input" type="color" id="ap-warning-color" style="height:40px;padding:4px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Info color</label>
+              <input class="form-input" type="color" id="ap-info-color" style="height:40px;padding:4px;"/>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Page language</label>
+              <select class="form-input" id="ap-language">
+                <option value="en">English</option>
+                <option value="es">Español</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Custom texts</label>
+            <div class="form-hint">Override key texts in the public panel and Discord embeds. Leave blank to use the default value. Embed fields support <code>{site}</code> and <code>{id}</code> placeholders.</div>
+            <div id="ap-texts-editor" style="display:grid;gap:10px;margin-top:10px;"></div>
           </div>
         </div>
 
         <button class="btn btn-primary" id="save-appearance-btn" style="margin-top:16px;">
-          <i class="fa-solid fa-floppy-disk"></i> Guardar apariencia
+          <i class="fa-solid fa-floppy-disk"></i> Save appearance
         </button>
+        <button class="btn btn-secondary" id="rebuild-index-btn" style="margin-top:16px;">
+          <i class="fa-solid fa-rotate"></i> Rebuild index.html from base template
+        </button>
+        <div class="form-hint" style="margin-top:8px;">
+          If index.html was manually edited or looks broken, this regenerates it from the pristine base template using saved appearance.
+        </div>
       </div>
 
     </main>
@@ -889,6 +963,35 @@ let sectionsData = [];
 let discordStatusSelection = [];
 let discordServiceDraftOrder = [];
 let discordDragId = null;
+const AP_TEXT_FIELDS = [
+  ["brand-subtitle",                  "Brand subtitle"],
+  ["hero-status-loading",             "Loading state text"],
+  ["hero-status-up",                  "All systems operational"],
+  ["hero-status-degraded",            "Some services degraded"],
+  ["hero-status-down",                "All services down"],
+  ["last-check-label",                "Last checked label"],
+  ["total-uptime-label",              "Total uptime label"],
+  ["services-status-title",           "Services status title"],
+  ["service-details-title",           "Service details title"],
+  ["footer-default",                  "Footer default text"],
+  ["service-detail-back",             "Back to services button"],
+  ["service-detail-status-operational","Status: operational"],
+  ["service-detail-status-down",      "Status: down"],
+  ["service-detail-status-unknown",   "Status: unknown"],
+  ["service-detail-latency",          "Latency label"],
+  ["service-detail-availability",     "Availability label"],
+  ["service-detail-history",          "History label"],
+  ["service-detail-hourly",           "Hourly status label"],
+  ["service-detail-latency-24h",      "Latency 24h label"],
+  ["service-detail-related-incidents","Related incidents label"],
+  ["service-detail-no-incidents",     "No incidents text"],
+  ["service-detail-legend-excellent", "Legend: excellent"],
+  ["service-detail-legend-good",      "Legend: good"],
+  ["service-detail-legend-poor",      "Legend: poor"],
+  ["service-detail-legend-nodata",    "Legend: no data"],
+  ["embed-footer",                    "Discord embed footer"],
+  ["embed-status-title",              "Discord status embed title"],
+];
 
 /* ═══════════════════════════════════════════
    UTILS
@@ -897,7 +1000,7 @@ let discordDragId = null;
 function fmt(date) {
   if (!date) return "—";
   try {
-    return new Date(date).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" });
+    return new Date(date).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
   } catch { return "—"; }
 }
 
@@ -907,9 +1010,39 @@ function fmtRelative(iso) {
   const m = Math.floor(d / 60_000);
   const h = Math.floor(m / 60);
   if (h > 24) return fmt(iso);
-  if (h > 0) return `hace ${h}h`;
-  if (m > 0) return `hace ${m}m`;
-  return "justo ahora";
+  if (h > 0) return `${h}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return "just now";
+}
+
+async function renderAppearanceTextEditor(ap = {}) {
+  const container = document.getElementById("ap-texts-editor");
+  if (!container) return;
+  const texts = ap.texts && typeof ap.texts === "object" ? ap.texts : {};
+  const lang = document.getElementById("ap-language")?.value || "en";
+  let defaults = {};
+  try {
+    const res = await fetch(`/lang/${lang}.json`, { cache: "no-store" });
+    if (res.ok) defaults = await res.json();
+  } catch { /* use empty defaults */ }
+  container.innerHTML = "";
+  AP_TEXT_FIELDS.forEach(([key, label]) => {
+    const group = document.createElement("div");
+    group.className = "form-group";
+    group.style.marginBottom = "0";
+    const labelEl = document.createElement("label");
+    labelEl.className = "form-label";
+    labelEl.textContent = label;
+    const input = document.createElement("input");
+    input.className = "form-input";
+    input.type = "text";
+    input.id = `ap-text-${key}`;
+    input.value = texts[key] ?? "";
+    input.placeholder = defaults[key] ?? "";
+    group.appendChild(labelEl);
+    group.appendChild(input);
+    container.appendChild(group);
+  });
 }
 
 function esc(str) {
@@ -1102,7 +1235,7 @@ document.getElementById("logout-btn").addEventListener("click", () => {
   window.location.replace("/login");
 });
 
-/* ── Verificar sesión al cargar — si no hay token válido, redirigir a /login ── */
+/* ── Verify session on load — if no valid token, redirect to /login ── */
 if (!TOKEN) {
   window.location.replace("/login");
 } else {
@@ -1118,7 +1251,7 @@ if (!TOKEN) {
     return r.json();
   }).then(cfg => {
     if (!cfg) return;
-    // Sesión válida → mostrar app
+    // Valid session → show app
     document.getElementById("app").style.display = "block";
     initApp();
   }).catch(() => {
@@ -1143,7 +1276,7 @@ async function api(method, path, body) {
   });
 
   if (res.status === 401) {
-    showToast("Token inválido. Vuelve a iniciar sesión.", "error");
+    showToast("Invalid token. Please log in again.", "error");
     throw new Error("Unauthorized");
   }
 
@@ -1209,6 +1342,44 @@ document.getElementById("force-check-btn").addEventListener("click", async () =>
   }, 5000);
 });
 
+document.getElementById("restart-detector-btn")?.addEventListener("click", () => {
+  openModal(`
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <div class="modal-title">Restart detector</div>
+        <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Confirm your password (and TOTP code, if enabled) to restart the monitoring process.</p>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="restart-confirm-pw"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">TOTP code (if enabled)</label>
+          <input class="form-input" type="text" id="restart-confirm-totp" placeholder="123456"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost modal-close">Cancel</button>
+        <button class="btn btn-danger" id="modal-confirm">Restart</button>
+      </div>
+    </div>
+  `, {
+    onConfirm: async (overlay) => {
+      const token = document.getElementById("restart-confirm-pw").value;
+      const code  = document.getElementById("restart-confirm-totp").value.trim();
+      try {
+        const r = await api("POST", "/admin/api/detector/restart", { token, code });
+        if (r.ok) { showToast("Detector restarting..."); overlay.remove(); }
+        else showToast(r.error ?? "Restart failed", "error");
+      } catch {
+        showToast("Restart failed", "error");
+      }
+    },
+  });
+});
+
 async function loadDashboard() {
   try {
     statusData = await api("GET", "/admin/api/status");
@@ -1225,14 +1396,14 @@ async function loadDashboard() {
     const pct = typeof statusData.totalonline === "number" ? statusData.totalonline.toFixed(2) + "%" : "—";
     document.getElementById("stat-uptime").textContent  = pct;
     document.getElementById("dash-updated").textContent = statusData.updatedAt
-      ? "Última actualización: " + fmt(statusData.updatedAt)
-      : "Sin datos";
+      ? "Last updated: " + fmt(statusData.updatedAt)
+      : "No data";
 
     const tbody = document.getElementById("dash-services-table");
     tbody.innerHTML = "";
 
     if (services.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">Sin servicios</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No services</td></tr>`;
       return;
     }
 
@@ -1252,7 +1423,7 @@ async function loadDashboard() {
           ${esc(svc.name)}
         </td>
         <td style="color:var(--muted);font-size:12px;">${esc(svc.sectionId ?? "—")}</td>
-        <td><span class="badge badge-${esc(svc.status)}">${svc.status === "up" ? "Operativo" : "Caído"}</span></td>
+        <td><span class="badge badge-${esc(svc.status)}">${svc.status === "up" ? "Operational" : "Down"}</span></td>
         <td>${esc(lat)}</td>
         <td>${esc(upt)}</td>
         <td style="color:var(--muted);font-size:12px;">${fmtRelative(svc.checkedAt)}</td>
@@ -1264,7 +1435,7 @@ async function loadDashboard() {
       const svc = sorted[idx];
       if (!svc) return;
       tr.style.cursor = "pointer";
-      tr.title = "Ver detalles de " + svc.name;
+      tr.title = "View details for " + svc.name;
       tr.addEventListener("click", () => openServiceDrawer(svc, statusData.incidents ?? []));
     });
   } catch (e) {
@@ -1280,36 +1451,36 @@ document.getElementById("new-announcement-btn").addEventListener("click", () => 
   openModal(`
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">Nuevo anuncio</div>
+        <div class="modal-title">New announcement</div>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">Tipo</label>
+          <label class="form-label">Type</label>
           <select class="form-select" id="ann-type">
-            <option value="info">ℹ️ Información</option>
-            <option value="maintenance">🔧 Mantenimiento programado</option>
-            <option value="incident">🔴 Incidente</option>
+            <option value="info">ℹ️ Information</option>
+            <option value="maintenance">🔧 Scheduled maintenance</option>
+            <option value="incident">🔴 Incident</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Título *</label>
-          <input class="form-input" type="text" id="ann-title" placeholder="Ej. Mantenimiento programado el domingo 3am"/>
+          <label class="form-label">Title *</label>
+          <input class="form-input" type="text" id="ann-title" placeholder="e.g. Scheduled maintenance Sunday 3am"/>
         </div>
         <div class="form-group">
-          <label class="form-label">Descripción</label>
-          <textarea class="form-textarea" id="ann-body" placeholder="Detalles del anuncio (opcional)"></textarea>
+          <label class="form-label">Description</label>
+          <textarea class="form-textarea" id="ann-body" placeholder="Announcement details (optional)"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Expira el (opcional)</label>
+          <label class="form-label">Expires at (optional)</label>
           <input class="form-input" type="datetime-local" id="ann-ends"/>
-          <div class="form-hint">Dejar vacío para que no expire automáticamente.</div>
+          <div class="form-hint">Leave blank to not expire automatically.</div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost modal-close">Cancelar</button>
+        <button class="btn btn-ghost modal-close">Cancel</button>
         <button class="btn btn-primary" id="modal-confirm">
-          <i class="fa-solid fa-bullhorn"></i> Publicar anuncio
+          <i class="fa-solid fa-bullhorn"></i> Publish announcement
         </button>
       </div>
     </div>
@@ -1320,7 +1491,7 @@ document.getElementById("new-announcement-btn").addEventListener("click", () => 
       const body  = overlay.querySelector("#ann-body").value.trim();
       const endsAt = overlay.querySelector("#ann-ends").value;
 
-      if (!title) { showToast("El título es obligatorio", "error"); return; }
+      if (!title) { showToast("Title is required", "error"); return; }
 
       try {
         await api("POST", "/admin/api/announcements", {
@@ -1328,10 +1499,10 @@ document.getElementById("new-announcement-btn").addEventListener("click", () => 
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         });
         overlay.remove();
-        showToast("Anuncio publicado correctamente");
+        showToast("Announcement published");
         loadAnnouncements();
       } catch {
-        showToast("Error al publicar el anuncio", "error");
+        showToast("Error publishing announcement", "error");
       }
     },
   });
@@ -1356,13 +1527,13 @@ async function loadAnnouncements() {
 
     list.forEach(ann => {
       const tr = document.createElement("tr");
-      const TYPE_LABELS = { maintenance: "Mantenimiento", incident: "Incidente", info: "Información" };
+      const TYPE_LABELS = { maintenance: "Maintenance", incident: "Incident", info: "Information" };
 
       tr.innerHTML = `
         <td><span class="badge badge-${esc(ann.type)}">${TYPE_LABELS[ann.type] ?? esc(ann.type)}</span></td>
         <td style="color:#fff;font-weight:500;">${esc(ann.title)}</td>
         <td style="color:var(--muted);font-size:12px;">${fmtRelative(ann.createdAt)}</td>
-        <td style="color:var(--muted);font-size:12px;">${ann.endsAt ? fmt(ann.endsAt) : "No expira"}</td>
+        <td style="color:var(--muted);font-size:12px;">${ann.endsAt ? fmt(ann.endsAt) : "Never"}</td>
         <td>
           <button class="btn btn-danger btn-sm" data-id="${esc(ann.id)}">
             <i class="fa-solid fa-trash"></i>
@@ -1371,16 +1542,16 @@ async function loadAnnouncements() {
       `;
 
       tr.querySelector("button").addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este anuncio?")) return;
+        if (!confirm("Delete this announcement?")) return;
         await api("DELETE", `/admin/api/announcements/${ann.id}`);
-        showToast("Anuncio eliminado");
+        showToast("Announcement deleted");
         loadAnnouncements();
       });
 
       tbody.appendChild(tr);
     });
   } catch {
-    showToast("Error al cargar anuncios", "error");
+    showToast("Error loading announcements", "error");
   }
 }
 
@@ -1398,41 +1569,41 @@ document.getElementById("new-incident-btn").addEventListener("click", () => {
   openModal(`
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">Nuevo incidente</div>
+        <div class="modal-title">New incident</div>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Tipo</label>
+            <label class="form-label">Type</label>
             <select class="form-select" id="inc-status">
-              <option value="investigating">🔴 Investigando</option>
-              <option value="identified">🟡 Identificado</option>
-              <option value="monitoring">🔵 Monitoreando</option>
-              <option value="maintenance">🔧 Mantenimiento</option>
+              <option value="investigating">🔴 Investigating</option>
+              <option value="identified">🟡 Identified</option>
+              <option value="monitoring">🔵 Monitoring</option>
+              <option value="maintenance">🔧 Maintenance</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Servicio afectado</label>
+            <label class="form-label">Affected service</label>
             <select class="form-select" id="inc-service">
-              <option value="">— Ninguno —</option>
+              <option value="">— None —</option>
               ${serviceOptions}
             </select>
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Título *</label>
-          <input class="form-input" type="text" id="inc-title" placeholder="Ej. Interrupción en el bot de Discord"/>
+          <label class="form-label">Title *</label>
+          <input class="form-input" type="text" id="inc-title" placeholder="e.g. Discord bot outage"/>
         </div>
         <div class="form-group">
-          <label class="form-label">Mensaje inicial</label>
-          <textarea class="form-textarea" id="inc-message" placeholder="Descripción inicial del incidente..."></textarea>
+          <label class="form-label">Initial message</label>
+          <textarea class="form-textarea" id="inc-message" placeholder="Initial incident description..."></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost modal-close">Cancelar</button>
+        <button class="btn btn-ghost modal-close">Cancel</button>
         <button class="btn btn-primary" id="modal-confirm">
-          <i class="fa-solid fa-triangle-exclamation"></i> Crear incidente
+          <i class="fa-solid fa-triangle-exclamation"></i> Create incident
         </button>
       </div>
     </div>
@@ -1443,7 +1614,7 @@ document.getElementById("new-incident-btn").addEventListener("click", () => {
       const title       = overlay.querySelector("#inc-title").value.trim();
       const message     = overlay.querySelector("#inc-message").value.trim();
 
-      if (!title) { showToast("El título es obligatorio", "error"); return; }
+      if (!title) { showToast("Title is required", "error"); return; }
 
       const services  = statusData ? Object.values(statusData.services ?? {}) : [];
       const svc       = services.find(s => s.id === serviceId);
@@ -1455,10 +1626,10 @@ document.getElementById("new-incident-btn").addEventListener("click", () => {
           serviceName: svc?.name || null,
         });
         overlay.remove();
-        showToast("Incidente creado");
+        showToast("Incident created");
         loadIncidents();
       } catch {
-        showToast("Error al crear incidente", "error");
+        showToast("Error creating incident", "error");
       }
     },
   });
@@ -1487,8 +1658,8 @@ async function loadIncidents() {
     tbody.parentElement.style.display = "";
 
     const STATUS_LABELS = {
-      investigating: "Investigando", identified: "Identificado",
-      monitoring: "Monitoreando", resolved: "Resuelto", maintenance: "Mantenimiento",
+      investigating: "Investigating", identified: "Identified",
+      monitoring: "Monitoring", resolved: "Resolved", maintenance: "Maintenance",
     };
 
     sorted.forEach(inc => {
@@ -1524,26 +1695,26 @@ async function loadIncidents() {
 
       // Resolve button
       tr.querySelector("[data-action='resolve']")?.addEventListener("click", async () => {
-        if (!confirm("¿Marcar como resuelto?")) return;
+        if (!confirm("Mark as resolved?")) return;
         await api("POST", `/admin/api/incidents/${inc.id}/updates`, {
-          status: "resolved", message: "Incidente resuelto.",
+          status: "resolved", message: "Incident resolved.",
         });
-        showToast("Incidente resuelto");
+        showToast("Incident resolved");
         loadIncidents();
       });
 
       // Delete button
       tr.querySelector("[data-action='delete']").addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este incidente? Esta acción también eliminará el anuncio relacionado.")) return;
+        if (!confirm("Delete this incident? This will also remove the related announcement.")) return;
         await api("DELETE", `/admin/api/incidents/${inc.id}`);
-        showToast("Incidente eliminado");
+        showToast("Incident deleted");
         loadIncidents();
       });
 
       tbody.appendChild(tr);
     });
   } catch {
-    showToast("Error al cargar incidentes", "error");
+    showToast("Error loading incidents", "error");
   }
 }
 
@@ -1577,32 +1748,32 @@ document.addEventListener("DOMContentLoaded", initDiscordServicesModalControls);
 document.getElementById("discord-reload-btn").addEventListener("click", async () => {
   try {
     const res = await api("POST", "/admin/api/discord/reload");
-    showToast(res.username ? `Bot verificado: ${res.username}` : "Bot recargado");
+    showToast(res.username ? `Bot verified: ${res.username}` : "Bot reloaded");
   } catch (err) {
-    showToast(err?.message || "No se pudo recargar el bot", "error");
+    showToast(err?.message || "Could not reload bot", "error");
   }
 });
 document.getElementById("discord-test-btn").addEventListener("click", async () => {
   try {
     await api("POST", "/admin/api/discord/test");
-    showToast("Mensaje de prueba enviado");
+    showToast("Test message sent");
   } catch (err) {
-    showToast(err?.message || "No se pudo enviar el mensaje de prueba", "error");
+    showToast(err?.message || "Could not send test message", "error");
   }
 });
 document.getElementById("discord-send-status-btn").addEventListener("click", async () => {
   try {
     await api("POST", "/admin/api/discord/send-status");
-    showToast("Embed de estado enviado");
+    showToast("Status embed sent");
   } catch (err) {
-    showToast(err?.message || "No se pudo enviar el embed de estado", "error");
+    showToast(err?.message || "Could not send status embed", "error");
   }
 });
 
 function addIncidentUpdate(inc) {
   const STATUS_LABELS = {
-    investigating: "🔴 Investigando", identified: "🟡 Identificado",
-    monitoring: "🔵 Monitoreando", resolved: "✅ Resuelto", maintenance: "🔧 Mantenimiento",
+    investigating: "🔴 Investigating", identified: "🟡 Identified",
+    monitoring: "🔵 Monitoring", resolved: "✅ Resolved", maintenance: "🔧 Maintenance",
   };
 
   const updates = [...(inc.updates ?? [])].reverse().slice(0, 3).map(u => `
@@ -1616,30 +1787,30 @@ function addIncidentUpdate(inc) {
   openModal(`
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">Actualizar incidente</div>
+        <div class="modal-title">Update incident</div>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
         <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">${inc.title}</p>
         ${updates ? `<div class="update-list" style="margin-bottom:20px;">${updates}</div>` : ""}
         <div class="form-group">
-          <label class="form-label">Nuevo estado</label>
+          <label class="form-label">New status</label>
           <select class="form-select" id="upd-status">
-            <option value="investigating">🔴 Investigando</option>
-            <option value="identified">🟡 Identificado</option>
-            <option value="monitoring">🔵 Monitoreando</option>
-            <option value="resolved">✅ Resuelto</option>
+            <option value="investigating">🔴 Investigating</option>
+            <option value="identified">🟡 Identified</option>
+            <option value="monitoring">🔵 Monitoring</option>
+            <option value="resolved">✅ Resolved</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Mensaje de actualización *</label>
-          <textarea class="form-textarea" id="upd-message" placeholder="Describe el progreso del incidente..."></textarea>
+          <label class="form-label">Update message *</label>
+          <textarea class="form-textarea" id="upd-message" placeholder="Describe the incident progress..."></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost modal-close">Cancelar</button>
+        <button class="btn btn-ghost modal-close">Cancel</button>
         <button class="btn btn-primary" id="modal-confirm">
-          <i class="fa-solid fa-paper-plane"></i> Publicar actualización
+          <i class="fa-solid fa-paper-plane"></i> Publish update
         </button>
       </div>
     </div>
@@ -1647,14 +1818,14 @@ function addIncidentUpdate(inc) {
     onConfirm: async (overlay) => {
       const status  = overlay.querySelector("#upd-status").value;
       const message = overlay.querySelector("#upd-message").value.trim();
-      if (!message) { showToast("El mensaje es obligatorio", "error"); return; }
+      if (!message) { showToast("Message is required", "error"); return; }
       try {
         await api("POST", `/admin/api/incidents/${inc.id}/updates`, { status, message });
         overlay.remove();
-        showToast("Actualización publicada");
+        showToast("Update published");
         loadIncidents();
       } catch {
-        showToast("Error al publicar actualización", "error");
+        showToast("Error publishing update", "error");
       }
     },
   });
@@ -1666,7 +1837,7 @@ function addIncidentUpdate(inc) {
 
 async function loadMonitors() {
   const container = document.getElementById("sections-editor");
-  container.innerHTML = `<p style="color:var(--muted);">Cargando...</p>`;
+  container.innerHTML = `<p style="color:var(--muted);">Loading...</p>`;
 
   try {
     const data = await api("GET", "/admin/api/services");
@@ -1674,7 +1845,7 @@ async function loadMonitors() {
     renderSectionsEditor();
     renderDiscordServiceSummary();
   } catch {
-    showToast("Error al cargar monitores", "error");
+    showToast("Error loading monitors", "error");
   }
 }
 
@@ -1683,7 +1854,7 @@ function renderSectionsEditor() {
   container.innerHTML = "";
 
   if (sectionsData.length === 0) {
-    container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-server"></i>No hay secciones. Crea una nueva.</div>`;
+    container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-server"></i>No sections. Create one.</div>`;
     return;
   }
 
@@ -1695,7 +1866,7 @@ function renderSectionsEditor() {
       <div class="section-block-header">
         <i class="fa-solid fa-chevron-right" style="font-size:11px;transition:transform .2s;"></i>
         <div class="section-block-title">${esc(section.name)}</div>
-        <div class="section-block-meta">${section.services.length} servicio${section.services.length !== 1 ? "s" : ""} • ID: ${esc(section.id)}</div>
+        <div class="section-block-meta">${section.services.length} service${section.services.length !== 1 ? "s" : ""} • ID: ${esc(section.id)}</div>
         <button class="btn btn-danger btn-sm" data-del-section="${sIdx}" style="margin-left:12px;">
           <i class="fa-solid fa-trash"></i>
         </button>
@@ -1703,7 +1874,7 @@ function renderSectionsEditor() {
       <div class="section-block-body">
         <div class="services-list" id="services-${sIdx}"></div>
         <button class="btn btn-ghost btn-sm" data-add-service="${sIdx}" style="margin-top:12px;">
-          <i class="fa-solid fa-plus"></i> Añadir servicio
+          <i class="fa-solid fa-plus"></i> Add service
         </button>
       </div>
     `;
@@ -1720,7 +1891,7 @@ function renderSectionsEditor() {
 
     // Delete section
     block.querySelector(`[data-del-section]`).addEventListener("click", () => {
-      if (!confirm(`¿Eliminar la sección "${section.name}" y todos sus servicios?`)) return;
+      if (!confirm(`Delete section "${section.name}" and all its services?`)) return;
       sectionsData.splice(sIdx, 1);
       renderSectionsEditor();
     });
@@ -1747,21 +1918,59 @@ function renderSectionsEditor() {
           <div class="service-row-url">${esc(svc.url)}</div>
         </div>
         <div class="service-row-actions">
-          <button class="btn btn-ghost btn-sm" data-edit-service title="Editar">
+          <button class="btn btn-ghost btn-sm" data-reset-stats title="Reset stats from a point in time">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+          </button>
+          <button class="btn btn-ghost btn-sm" data-edit-service title="Edit">
             <i class="fa-solid fa-pen"></i>
           </button>
-          <button class="btn btn-danger btn-sm" data-del-service title="Eliminar">
+          <button class="btn btn-danger btn-sm" data-del-service title="Delete">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
       `;
+
+      row.querySelector("[data-reset-stats]").addEventListener("click", () => {
+        openModal(`
+          <div class="modal" style="max-width:420px;">
+            <div class="modal-header">
+              <div class="modal-title">Reset stats — ${esc(svc.name)}</div>
+              <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+                Clears history from this point forward (e.g. to erase a false-positive outage). Leave blank to wipe all history.
+              </p>
+              <div class="form-group">
+                <label class="form-label">From (leave blank = reset all)</label>
+                <input class="form-input" type="datetime-local" id="reset-stats-from"/>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost modal-close">Cancel</button>
+              <button class="btn btn-danger" id="modal-confirm">Reset</button>
+            </div>
+          </div>
+        `, {
+          onConfirm: async (overlay) => {
+            const from = document.getElementById("reset-stats-from").value; // "" or "YYYY-MM-DDTHH:mm"
+            try {
+              const r = await api("POST", `/admin/api/services/${encodeURIComponent(svc.id)}/reset-stats`, { from: from || null });
+              if (r.ok) { showToast("Stats reset."); overlay.remove(); loadMonitors(); }
+              else showToast(r.error ?? "Reset failed", "error");
+            } catch {
+              showToast("Reset failed", "error");
+            }
+          },
+        });
+      });
 
       row.querySelector("[data-edit-service]").addEventListener("click", () => {
         openServiceModal(svc, sIdx, svIdx);
       });
 
       row.querySelector("[data-del-service]").addEventListener("click", () => {
-        if (!confirm(`¿Eliminar el servicio "${svc.name}"?`)) return;
+        if (!confirm(`Delete service "${svc.name}"?`)) return;
         sectionsData[sIdx].services.splice(svIdx, 1);
         renderSectionsEditor();
       });
@@ -1778,27 +1987,27 @@ function openServiceModal(existing, sIdx, svIdx) {
   openModal(`
     <div class="modal" style="max-width:560px;">
       <div class="modal-header">
-        <div class="modal-title">${isEdit ? "Editar" : "Nuevo"} servicio</div>
+        <div class="modal-title">${isEdit ? "Edit" : "New"} service</div>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Nombre *</label>
-            <input class="form-input" id="svc-name" type="text" placeholder="Mi Servicio" value="${esc(existing?.name ?? "")}"/>
+            <label class="form-label">Name *</label>
+            <input class="form-input" id="svc-name" type="text" placeholder="My Service" value="${esc(existing?.name ?? "")}"/>
           </div>
           <div class="form-group">
-            <label class="form-label">ID único *</label>
-            <input class="form-input" id="svc-id" type="text" placeholder="mi-servicio" value="${esc(existing?.id ?? "")}"/>
+            <label class="form-label">Unique ID *</label>
+            <input class="form-input" id="svc-id" type="text" placeholder="my-service" value="${esc(existing?.id ?? "")}"/>
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">URL o host:puerto *</label>
-          <input class="form-input" id="svc-url" type="text" placeholder="https://miservicio.com/health, 1.2.3.4:3306, host.com (ping/dns)" value="${esc(existing?.url ?? "")}"/>
+          <label class="form-label">URL or host:port *</label>
+          <input class="form-input" id="svc-url" type="text" placeholder="https://myservice.com/health, 1.2.3.4:3306, host.com (ping/dns)" value="${esc(existing?.url ?? "")}"/>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Tipo de check</label>
+            <label class="form-label">Check type</label>
             <select class="form-select" id="svc-check-type">
               <option value="http"    ${checkTypeVal === "http"    ? "selected" : ""}>HTTP/HTTPS</option>
               <option value="tcp"     ${checkTypeVal === "tcp"     ? "selected" : ""}>TCP</option>
@@ -1809,7 +2018,7 @@ function openServiceModal(existing, sIdx, svIdx) {
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Método HTTP</label>
+            <label class="form-label">HTTP method</label>
             <select class="form-select" id="svc-method">
               <option value="HEAD" ${(existing?.method ?? "HEAD") === "HEAD" ? "selected" : ""}>HEAD</option>
               <option value="GET"  ${existing?.method === "GET"  ? "selected" : ""}>GET</option>
@@ -1818,17 +2027,17 @@ function openServiceModal(existing, sIdx, svIdx) {
           </div>
         </div>
         <div class="form-group" id="svc-keyword-group" style="${checkTypeVal === "keyword" ? "" : "display:none"}">
-          <label class="form-label">Keyword a buscar *</label>
-          <input class="form-input" id="svc-keyword" type="text" placeholder="texto que debe aparecer en la respuesta" value="${esc(existing?.keyword ?? "")}"/>
-          <div class="form-hint">Cloudflare = caído.</div>
-          <label class="form-label" style="margin-top:8px;">Modo de comparación</label>
+          <label class="form-label">Keyword to search *</label>
+          <input class="form-input" id="svc-keyword" type="text" placeholder="text that must appear in the response" value="${esc(existing?.keyword ?? "")}"/>
+          <div class="form-hint">Cloudflare = down.</div>
+          <label class="form-label" style="margin-top:8px;">Comparison mode</label>
           <select class="form-select" id="svc-keyword-mode">
-            <option value="contains" ${(existing?.keywordMode ?? "contains") === "contains" ? "selected" : ""}>Contiene (busca el texto dentro de la respuesta)</option>
-            <option value="exact"    ${existing?.keywordMode === "exact" ? "selected" : ""}>Exacto (la respuesta completa debe ser igual al texto)</option>
+            <option value="contains" ${(existing?.keywordMode ?? "contains") === "contains" ? "selected" : ""}>Contains (searches for text within the response)</option>
+            <option value="exact"    ${existing?.keywordMode === "exact" ? "selected" : ""}>Exact (full response must match the text)</option>
           </select>
         </div>
         <div class="form-group" id="svc-dns-group" style="${checkTypeVal === "dns" ? "" : "display:none"}">
-          <label class="form-label">Tipo de registro DNS</label>
+          <label class="form-label">DNS record type</label>
           <select class="form-select" id="svc-dns-type">
             <option value="A"     ${(existing?.dnsRecordType ?? "A") === "A"     ? "selected" : ""}>A</option>
             <option value="AAAA"  ${existing?.dnsRecordType === "AAAA"  ? "selected" : ""}>AAAA</option>
@@ -1836,23 +2045,23 @@ function openServiceModal(existing, sIdx, svIdx) {
             <option value="MX"    ${existing?.dnsRecordType === "MX"    ? "selected" : ""}>MX</option>
             <option value="TXT"   ${existing?.dnsRecordType === "TXT"   ? "selected" : ""}>TXT</option>
           </select>
-          <div class="form-hint">URL = solo el dominio (ej: ejemplo.com). Servidor DNS opcional abajo.</div>
-          <input class="form-input" id="svc-dns-server" type="text" style="margin-top:8px;" placeholder="Servidor DNS opcional, ej: 1.1.1.1" value="${esc(existing?.dnsServer ?? "")}"/>
+          <div class="form-hint">URL = domain only (e.g: example.com). Optional DNS server below.</div>
+          <input class="form-input" id="svc-dns-server" type="text" style="margin-top:8px;" placeholder="Optional DNS server, e.g: 1.1.1.1" value="${esc(existing?.dnsServer ?? "")}"/>
         </div>
         <div class="form-group">
           <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" id="svc-debug" ${existing?.debug ? "checked" : ""}/> Modo debug (guarda razón detallada de cada caída)
+            <input type="checkbox" id="svc-debug" ${existing?.debug ? "checked" : ""}/> Debug mode (saves detailed reason for each failure)
           </label>
         </div>
         <div class="form-group">
-          <button class="btn btn-ghost" type="button" id="svc-test-btn"><i class="fa-solid fa-vial"></i> Probar configuración</button>
+          <button class="btn btn-ghost" type="button" id="svc-test-btn"><i class="fa-solid fa-vial"></i> Test configuration</button>
           <div id="svc-test-result" style="margin-top:8px;font-size:13px;"></div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Intervalo (segundos)</label>
+            <label class="form-label">Interval (seconds)</label>
             <input class="form-input" id="svc-interval" type="number" min="10" placeholder="60" value="${esc(String(existing?.checkInterval ?? 60))}"/>
-            <div class="form-hint">Ej: 30 = 30s, 3600 = 1h</div>
+            <div class="form-hint">e.g: 30 = 30s, 3600 = 1h</div>
           </div>
           <div class="form-group">
             <label class="form-label">Timeout (ms)</label>
@@ -1861,19 +2070,19 @@ function openServiceModal(existing, sIdx, svIdx) {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Icono FontAwesome</label>
+            <label class="form-label">FontAwesome icon</label>
             <input class="form-input" id="svc-icon" type="text" placeholder="fa-solid fa-server" value="${esc(existing?.icon ?? "")}"/>
           </div>
           <div class="form-group">
             <label class="form-label">Headers (JSON, opcional)</label>
-            <textarea class="form-textarea" id="svc-headers" style="min-height:60px;" placeholder='{"Authorization": "mi-token"}'>${esc(existing?.headers ? JSON.stringify(existing.headers) : "")}</textarea>
+            <textarea class="form-textarea" id="svc-headers" style="min-height:60px;" placeholder='{"Authorization": "my-token"}'>${esc(existing?.headers ? JSON.stringify(existing.headers) : "")}</textarea>
           </div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost modal-close">Cancelar</button>
+        <button class="btn btn-ghost modal-close">Cancel</button>
         <button class="btn btn-primary" id="modal-confirm">
-          <i class="fa-solid fa-floppy-disk"></i> ${isEdit ? "Guardar" : "Añadir"}
+          <i class="fa-solid fa-floppy-disk"></i> ${isEdit ? "Save" : "Add"}
         </button>
       </div>
     </div>
@@ -1894,13 +2103,13 @@ function openServiceModal(existing, sIdx, svIdx) {
       const timeout    = parseInt(overlay.querySelector("#svc-timeout").value) || 10000;
       const headersRaw = overlay.querySelector("#svc-headers").value.trim();
 
-      if (!name || !id || !url) { showToast("Nombre, ID y URL son obligatorios", "error"); return; }
-      if (checkType === "keyword" && !keyword) { showToast("Keyword es obligatorio para este tipo de check", "error"); return; }
+      if (!name || !id || !url) { showToast("Name, ID and URL are required", "error"); return; }
+      if (checkType === "keyword" && !keyword) { showToast("Keyword is required for this check type", "error"); return; }
 
       let headers = null;
       if (headersRaw) {
         try { headers = JSON.parse(headersRaw); }
-        catch { showToast("Los headers no son JSON válido", "error"); return; }
+        catch { showToast("Headers are not valid JSON", "error"); return; }
       }
 
       const svcObj = { id, name, url, checkType, checkInterval: interval, timeout };
@@ -1943,7 +2152,7 @@ function openServiceModal(existing, sIdx, svIdx) {
       const rawHeaders = overlay2.querySelector("#svc-headers").value.trim();
       if (rawHeaders) {
         try { testHeaders = JSON.parse(rawHeaders); }
-        catch { showToast("Los headers no son JSON válido", "error"); return; }
+        catch { showToast("Headers are not valid JSON", "error"); return; }
       }
       const testSvc = {
         url:           overlay2.querySelector("#svc-url").value.trim(),
@@ -1956,9 +2165,9 @@ function openServiceModal(existing, sIdx, svIdx) {
         timeout:       parseInt(overlay2.querySelector("#svc-timeout").value) || undefined,
         headers:       testHeaders,
       };
-      if (!testSvc.url) { showToast("URL requerida para probar", "error"); return; }
+      if (!testSvc.url) { showToast("URL required for test", "error"); return; }
 
-      out.textContent = "Probando…";
+      out.textContent = "Testing…";
       try {
         const r = await api("POST", "/admin/api/test-check", testSvc);
         const color = r.status === "up" ? "var(--success, #2ecc71)" : "var(--danger, #e74c3c)";
@@ -1968,7 +2177,7 @@ function openServiceModal(existing, sIdx, svIdx) {
         if (r.debug) html += `<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px;opacity:.8;">${esc(JSON.stringify(r.debug, null, 2))}</pre>`;
         out.innerHTML = html;
       } catch {
-        out.textContent = "Error al probar la configuración.";
+        out.textContent = "Error testing configuration.";
       }
     });
   }
@@ -1978,25 +2187,25 @@ document.getElementById("add-section-btn").addEventListener("click", () => {
   openModal(`
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">Nueva sección</div>
+        <div class="modal-title">New section</div>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Nombre *</label>
-            <input class="form-input" id="sec-name" type="text" placeholder="Mi Infraestructura"/>
+            <label class="form-label">Name *</label>
+            <input class="form-input" id="sec-name" type="text" placeholder="My Infrastructure"/>
           </div>
           <div class="form-group">
-            <label class="form-label">ID único *</label>
-            <input class="form-input" id="sec-id" type="text" placeholder="mi-infra"/>
+            <label class="form-label">Unique ID *</label>
+            <input class="form-input" id="sec-id" type="text" placeholder="my-infra"/>
           </div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost modal-close">Cancelar</button>
+        <button class="btn btn-ghost modal-close">Cancel</button>
         <button class="btn btn-primary" id="modal-confirm">
-          <i class="fa-solid fa-layer-group"></i> Crear sección
+          <i class="fa-solid fa-layer-group"></i> Create section
         </button>
       </div>
     </div>
@@ -2004,8 +2213,8 @@ document.getElementById("add-section-btn").addEventListener("click", () => {
     onConfirm: (overlay) => {
       const name = overlay.querySelector("#sec-name").value.trim();
       const id   = overlay.querySelector("#sec-id").value.trim().replace(/\s+/g, "-");
-      if (!name || !id) { showToast("Nombre e ID son obligatorios", "error"); return; }
-      if (sectionsData.find(s => s.id === id)) { showToast("Ya existe una sección con ese ID", "error"); return; }
+      if (!name || !id) { showToast("Name and ID are required", "error"); return; }
+      if (sectionsData.find(s => s.id === id)) { showToast("A section with that ID already exists", "error"); return; }
       sectionsData.push({ id, name, services: [] });
       overlay.remove();
       renderSectionsEditor();
@@ -2018,10 +2227,10 @@ document.getElementById("save-monitors-btn").addEventListener("click", async () 
     const btn = document.getElementById("save-monitors-btn");
     btn.disabled = true;
     await api("PUT", "/admin/api/services", { sections: sectionsData });
-    showToast("Monitores guardados. Aplicando en el próximo ciclo...");
+    showToast("Monitors saved. Applying on next cycle...");
     btn.disabled = false;
   } catch {
-    showToast("Error al guardar monitores", "error");
+    showToast("Error saving monitors", "error");
     document.getElementById("save-monitors-btn").disabled = false;
   }
 });
@@ -2054,20 +2263,22 @@ async function loadSettings() {
 
     const statusEl = document.getElementById("discord-status");
     if (cfg.discordBotToken) {
-      statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Token guardado (${esc(cfg.discordBotToken)})`;
+      statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Token saved (${esc(cfg.discordBotToken)})`;
     } else {
-      statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:var(--danger);"></i> Sin token configurado`;
+      statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:var(--danger);"></i> No token configured`;
     }
 
     const totpHint = document.getElementById("totp-hint");
     if (totpHint) {
       if (cfg.hasTotpSecret) {
-        totpHint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> TOTP activo (${esc(cfg.totpSecretHint ?? "…")}). El login usa código de 6 dígitos.`;
+        totpHint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> TOTP active (${esc(cfg.totpSecretHint ?? "…")}). Login uses 6-digit code.`;
       } else {
-        totpHint.textContent = "Sin TOTP configurado. El login acepta cualquier código/token.";
+        totpHint.textContent = "No TOTP configured. Login accepts any code/token.";
       }
     }
     const ap = cfg.appearance ?? {};
+    const topbarBrand = document.getElementById("topbar-brand-name");
+    if (topbarBrand && ap.siteTitle) topbarBrand.textContent = ap.siteTitle;
     document.getElementById("ap-site-title").value   = ap.siteTitle ?? "";
     document.getElementById("ap-footer-text").value  = ap.footerText ?? "";
     document.getElementById("ap-logo-url").value     = ap.logoUrl ?? "";
@@ -2077,10 +2288,21 @@ async function loadSettings() {
     document.getElementById("ap-bg-solid").value     = ap.backgroundSolidColor || "#071025";
     document.getElementById("ap-font-family").value  = ap.fontFamily ?? "Inter";
     document.getElementById("ap-accent-color").value = ap.accentColor || "#38bdf8";
+    document.getElementById("ap-accent-strong-color").value = ap.accentStrongColor || "#0ea5e9";
+    document.getElementById("ap-bg1-color").value    = ap.bgColor1 || "#080e1c";
+    document.getElementById("ap-bg2-color").value    = ap.bgColor2 || "#040814";
+    document.getElementById("ap-card-color").value   = ap.cardColor || "#ffffff";
+    document.getElementById("ap-muted-color").value  = ap.mutedColor || "#94a3b8";
+    document.getElementById("ap-success-color").value = ap.successColor || "#22c55e";
+    document.getElementById("ap-danger-color").value  = ap.dangerColor || "#ef4444";
+    document.getElementById("ap-warning-color").value = ap.warningColor || "#f59e0b";
+    document.getElementById("ap-info-color").value    = ap.infoColor || "#3b82f6";
+    document.getElementById("ap-language").value     = ap.language ?? "en";
+    renderAppearanceTextEditor(ap);
     document.getElementById("ap-bg-image-group").style.display = (ap.backgroundType === "solid") ? "none"  : "block";
     document.getElementById("ap-bg-solid-group").style.display = (ap.backgroundType === "solid") ? "block" : "none";
   } catch {
-    showToast("Error al cargar configuración", "error");
+    showToast("Error loading configuration", "error");
   }
 }
 
@@ -2090,8 +2312,22 @@ document.getElementById("ap-bg-type").addEventListener("change", e => {
   document.getElementById("ap-bg-solid-group").style.display = isSolid ? "block" : "none";
 });
 
+document.getElementById("ap-language").addEventListener("change", () => {
+  const currentTexts = {};
+  AP_TEXT_FIELDS.forEach(([key]) => {
+    const value = document.getElementById(`ap-text-${key}`)?.value.trim() ?? "";
+    if (value) currentTexts[key] = value;
+  });
+  renderAppearanceTextEditor({ texts: currentTexts });
+});
+
 document.getElementById("save-appearance-btn").addEventListener("click", async () => {
   try {
+    const texts = {};
+    AP_TEXT_FIELDS.forEach(([key]) => {
+      const value = document.getElementById(`ap-text-${key}`)?.value.trim() ?? "";
+      if (value) texts[key] = value;
+    });
     await api("PUT", "/admin/api/appearance", {
       siteTitle:            document.getElementById("ap-site-title").value.trim(),
       footerText:           document.getElementById("ap-footer-text").value.trim(),
@@ -2102,10 +2338,30 @@ document.getElementById("save-appearance-btn").addEventListener("click", async (
       backgroundSolidColor: document.getElementById("ap-bg-solid").value,
       fontFamily:           document.getElementById("ap-font-family").value,
       accentColor:          document.getElementById("ap-accent-color").value,
+      accentStrongColor:    document.getElementById("ap-accent-strong-color").value,
+      bgColor1:             document.getElementById("ap-bg1-color").value,
+      bgColor2:             document.getElementById("ap-bg2-color").value,
+      cardColor:            document.getElementById("ap-card-color").value,
+      mutedColor:           document.getElementById("ap-muted-color").value,
+      successColor:         document.getElementById("ap-success-color").value,
+      dangerColor:          document.getElementById("ap-danger-color").value,
+      warningColor:         document.getElementById("ap-warning-color").value,
+      infoColor:            document.getElementById("ap-info-color").value,
+      language:             document.getElementById("ap-language").value,
+      texts,
     });
-    showToast("Apariencia guardada");
+    showToast("Appearance saved");
   } catch {
-    showToast("Error al guardar apariencia", "error");
+    showToast("Error saving appearance", "error");
+  }
+});
+
+document.getElementById("rebuild-index-btn").addEventListener("click", async () => {
+  try {
+    await api("POST", "/admin/api/appearance/rebuild-index", {});
+    showToast("index.html rebuilt from base template");
+  } catch {
+    showToast("Error rebuilding index.html", "error");
   }
 });
 
@@ -2118,7 +2374,7 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
   const discordStatusServices  = discordStatusSelection.map(s => s.id).join(",");
 
   if (adminToken && adminToken.length < 16) {
-    showToast("El token de admin debe tener al menos 16 caracteres", "error");
+    showToast("Admin token must be at least 16 characters", "error");
     return;
   }
 
@@ -2135,9 +2391,9 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
     if (adminToken) {
       TOKEN = adminToken;
       sessionStorage.setItem("nexora_admin_token", adminToken);
-      showToast("Configuración guardada. Token actualizado en sesión.");
+      showToast("Settings saved. Token updated in session.");
     } else {
-      showToast("Configuración guardada");
+      showToast("Settings saved");
     }
 
     document.getElementById("cfg-discord-token").value  = "";
@@ -2146,7 +2402,7 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
     if (totpEl) totpEl.value = "";
     loadSettings();
   } catch {
-    showToast("Error al guardar configuración", "error");
+    showToast("Error saving settings", "error");
   }
 });
 
@@ -2183,11 +2439,11 @@ function openServiceDrawer(svc, allIncidents) {
   const uptimeSection = document.createElement("div");
   uptimeSection.className = "svc-drawer-section";
   uptimeSection.innerHTML = `
-    <div class="svc-drawer-section-title">Disponibilidad</div>
+    <div class="svc-drawer-section-title">Availability</div>
     <div class="svc-uptime-tiles">
-      ${uptimeTile("Hoy",    todayPct)}
-      ${uptimeTile("7 días", weekPct)}
-      ${uptimeTile("30 días", monthPct)}
+      ${uptimeTile("Today",   todayPct)}
+      ${uptimeTile("7 days",  weekPct)}
+      ${uptimeTile("30 days", monthPct)}
     </div>
   `;
   svcDrawerBody.appendChild(uptimeSection);
@@ -2202,50 +2458,50 @@ function openServiceDrawer(svc, allIncidents) {
   let sparkHtml = "";
   if (sparkData.length > 0) {
     const maxLat = Math.max(...sparkData.map(d => d.avgLatency ?? 0).filter(v => v > 0), 1);
-    sparkHtml = `<div style="margin-top:10px;"><div class="svc-drawer-section-title" style="margin-bottom:6px;">Latencia 24h (promedio por hora)</div>
+    sparkHtml = `<div style="margin-top:10px;"><div class="svc-drawer-section-title" style="margin-bottom:6px;">Latency 24h (avg per hour)</div>
       <div class="svc-latency-sparkline">` +
       sparkData.map(d => {
         const v   = d.avgLatency ?? 0;
         const pct = v > 0 ? Math.max(15, Math.round((v / maxLat) * 100)) : 5;
-        const tip = d.avgLatency ? `${d.hour.slice(11,16)} · ${d.avgLatency}ms` : `${d.hour.slice(11,16)} · sin datos`;
+        const tip = d.avgLatency ? `${d.hour.slice(11,16)} · ${d.avgLatency}ms` : `${d.hour.slice(11,16)} · no data`;
         return `<div class="svc-latency-bar-item" style="height:${pct}%;" data-tip="${tip}"></div>`;
       }).join("") +
       `</div></div>`;
   }
 
   latSection.innerHTML = `
-    <div class="svc-drawer-section-title">Latencia actual</div>
+    <div class="svc-drawer-section-title">Current latency</div>
     <div class="svc-latency-bar">
       <div class="svc-latency-val">${lat !== null ? lat + " ms" : "—"}</div>
-      <div class="svc-latency-sub">Última verificación<br><span style="color:#fff;">${svc.checkedAt ? fmt(svc.checkedAt) : "—"}</span></div>
+      <div class="svc-latency-sub">Last check<br><span style="color:#fff;">${svc.checkedAt ? fmt(svc.checkedAt) : "—"}</span></div>
     </div>
     ${sparkHtml}
   `;
   svcDrawerBody.appendChild(latSection);
 
-  // ── History 30 días ──
+  // ── History 30 days ──
   const histSection = document.createElement("div");
   histSection.className = "svc-drawer-section";
   const histRow = document.createElement("div");
   histRow.className = "svc-history-row";
   buildDrawerHistory(histRow, svc.history ?? []);
-  histSection.innerHTML = `<div class="svc-drawer-section-title">Historial 30 días</div>`;
+  histSection.innerHTML = `<div class="svc-drawer-section-title">30-day history</div>`;
   histSection.appendChild(histRow);
   svcDrawerBody.appendChild(histSection);
 
-  // ── Incidentes relacionados ──
+  // ── Incidents relacionados ──
   const relatedInc = (allIncidents ?? []).filter(i =>
     i.serviceId === svc.id || i.serviceName === svc.name
   ).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
 
   const incSection = document.createElement("div");
   incSection.className = "svc-drawer-section";
-  incSection.innerHTML = `<div class="svc-drawer-section-title">Incidentes relacionados</div>`;
+  incSection.innerHTML = `<div class="svc-drawer-section-title">Related incidents</div>`;
 
   if (relatedInc.length === 0) {
-    incSection.innerHTML += `<div class="svc-no-data"><i class="fa-solid fa-circle-check" style="color:var(--success);margin-right:6px;"></i>Sin incidentes registrados</div>`;
+    incSection.innerHTML += `<div class="svc-no-data"><i class="fa-solid fa-circle-check" style="color:var(--success);margin-right:6px;"></i>No incidents recorded</div>`;
   } else {
-    const STATUS_LABELS = { investigating:"Investigando", identified:"Identificado", monitoring:"Monitoreando", resolved:"Resuelto", maintenance:"Mantenimiento" };
+    const STATUS_LABELS = { investigating:"Investigating", identified:"Identified", monitoring:"Monitoring", resolved:"Resolved", maintenance:"Maintenance" };
     relatedInc.forEach(inc => {
       const entry = document.createElement("div");
       entry.className = "svc-incident-entry";
@@ -2257,7 +2513,7 @@ function openServiceDrawer(svc, allIncidents) {
         </div>
         <div class="svc-incident-meta">
           ${fmtRelative(inc.createdAt)}
-          ${isResolved ? " · Resuelto en " + formatDurationSvc(inc.createdAt, inc.resolvedAt) : ""}
+          ${isResolved ? " · Resolved in " + formatDurationSvc(inc.createdAt, inc.resolvedAt) : ""}
         </div>
       `;
       incSection.appendChild(entry);
@@ -2271,10 +2527,10 @@ function openServiceDrawer(svc, allIncidents) {
     dbgSection.className = "svc-drawer-section";
     const d = svc.lastDebug;
     dbgSection.innerHTML = `
-      <div class="svc-drawer-section-title">Debug — última razón de check</div>
+      <div class="svc-drawer-section-title">Debug — last check reason</div>
       <div class="svc-no-data" style="text-align:left;line-height:1.6;">
-        <div><b>Hora:</b> ${fmt(d.at)}</div>
-        <div><b>Status:</b> ${esc(d.status)} · <b>Code:</b> ${d.code ?? "-"} · <b>Latencia:</b> ${d.latency ?? "-"}ms</div>
+        <div><b>Time:</b> ${fmt(d.at)}</div>
+        <div><b>Status:</b> ${esc(d.status)} · <b>Code:</b> ${d.code ?? "-"} · <b>Latency:</b> ${d.latency ?? "-"}ms</div>
         ${d.error ? `<div><b>Error:</b> ${esc(d.error)}</div>` : ""}
         ${d.detail ? `<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px;opacity:.85;">${esc(JSON.stringify(d.detail, null, 2))}</pre>` : ""}
       </div>
@@ -2404,7 +2660,7 @@ function patchDashboardRows() {
     </div>
     <div class="discord-services-modal-body" id="discord-services-modal-body"></div>
     <div class="discord-services-modal-footer">
-      <button class="btn btn-ghost" id="discord-services-cancel-btn" type="button">Cancelar</button>
+      <button class="btn btn-ghost" id="discord-services-cancel-btn" type="button">Cancel</button>
       <button class="btn btn-primary" id="discord-services-confirm-btn" type="button">Listo</button>
     </div>
   </div>

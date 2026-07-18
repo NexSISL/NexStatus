@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nexora Admin — Acceso</title>
+  <title>Status Admin — Login</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -72,20 +72,20 @@
 </head>
 <body>
 <div class="login-box">
-  <img src="/icon.svg" alt="Nexora"/>
+  <img src="/icon.svg" alt="Status"/>
   <h1>Admin</h1>
-  <p>Ingresa tus credenciales de acceso</p>
+  <p>Enter your access credentials</p>
 
   <div class="form-group">
-    <label class="form-label">Contraseña</label>
+    <label class="form-label">Password</label>
     <input class="form-input" type="password" id="token-input"
-           placeholder="Token de acceso"
+           placeholder="Access token"
            autocomplete="current-password"
            style="text-align:left;font-size:15px;letter-spacing:1px;"/>
   </div>
   <div class="form-group" id="totp-group">
     <label class="form-label">
-      Código TOTP <span style="color:var(--muted);font-weight:400;">(si está configurado)</span>
+      TOTP code <span style="color:var(--muted);font-weight:400;">(if configured)</span>
     </label>
     <input class="form-input" type="text" id="totp-input"
            placeholder="000000"
@@ -96,7 +96,7 @@
 
   <button class="btn btn-primary" style="width:100%;justify-content:center;" id="login-btn">
     <i class="fa-solid fa-arrow-right-to-bracket" id="btn-icon"></i>
-    <span id="btn-text">Entrar</span>
+    <span id="btn-text">Sign in</span>
     <i class="fa-solid fa-spinner fa-spin" id="spinner"></i>
   </button>
 
@@ -117,7 +117,7 @@
   const spinner    = document.getElementById("spinner");
   const btnText    = document.getElementById("btn-text");
 
-  // Si ya hay sesión válida, ir directo al admin
+  // Valid session found, redirect to admin
   const saved = sessionStorage.getItem("nexora_admin_token");
   if (saved) {
     fetch("/admin/api/settings", { headers: { "x-admin-token": saved } })
@@ -128,12 +128,12 @@
       .then(cfg => {
         if (!cfg) return;
         if (cfg.hasTotpSecret) {
-          // Hay TOTP — pre-rellenar contraseña pero pedir código
+          // TOTP present — pre-fill password but request code
           tokenInput.value = saved;
           totpInput.focus();
           return;
         }
-        // Sin TOTP → redirigir directo
+        // No TOTP → redirect directly
         window.location.replace("/admin");
       })
       .catch(() => sessionStorage.removeItem("nexora_admin_token"));
@@ -150,7 +150,7 @@
 
     btnIcon.style.display  = "none";
     spinner.style.display  = "inline-block";
-    btnText.textContent    = "Verificando…";
+    btnText.textContent    = "Verifying…";
 
     try {
       const res  = await fetch("/admin/api/auth", {
@@ -164,16 +164,16 @@
         sessionStorage.setItem("nexora_admin_token", data.sessionToken ?? token);
         window.location.replace("/admin");
       } else {
-        showError(data.error ?? "Credenciales incorrectas");
+        showError(data.error ?? "Invalid credentials");
         totpInput.value = "";
         totpInput.focus();
       }
     } catch {
-      showError("Error de conexión");
+      showError("Connection error");
     } finally {
       btnIcon.style.display = "inline-block";
       spinner.style.display = "none";
-      btnText.textContent   = "Entrar";
+      btnText.textContent   = "Sign in";
     }
   }
 

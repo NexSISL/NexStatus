@@ -58,12 +58,15 @@ function renderServiceDetail(container, svc, allIncidents) {
 
   const navBrand = document.createElement("div");
   navBrand.className = "svc-nav-brand";
-  const navLogo = document.createElement("img");
-  navLogo.src = "https://cdn.nexorabot.xyz/nexora/img/logo.svg";
-  navLogo.alt = "Nexora";
-  navLogo.width = 22; navLogo.height = 22;
-  navBrand.appendChild(navLogo);
-  navBrand.appendChild(document.createTextNode("Nexora Status"));
+  const ap = window.__APPEARANCE__ || {};
+  if (ap.logoUrl) {
+    const navLogo = document.createElement("img");
+    navLogo.src = ap.logoUrl;
+    navLogo.alt = ap.siteTitle || "Status";
+    navLogo.width = 22; navLogo.height = 22;
+    navBrand.appendChild(navLogo);
+  }
+  navBrand.appendChild(document.createTextNode(ap.siteTitle || texts["footer-default"] || "Status"));
   nav.appendChild(navBrand);
   container.appendChild(nav);
 
@@ -213,6 +216,6 @@ function renderServiceDetail(container, svc, allIncidents) {
   /* ── Footer ───────────────────────────────── */
   const footer = document.createElement("footer");
   footer.className = "svc-footer";
-  footer.textContent = `© ${new Date().getFullYear()} ${texts["footer-default"] || "Nexora – Status Monitor"}`;
+  footer.textContent = `© ${new Date().getFullYear()} ${window.__APPEARANCE__?.footerText || texts["footer-default"] || "Status Monitor"}`;
   container.appendChild(footer);
 }
