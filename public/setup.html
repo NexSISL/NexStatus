@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nexora — Configuración inicial</title>
+  <title>Nexora — Initial setup</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -114,7 +114,7 @@
 </head>
 <body>
 <div class="wizard">
-  <h1>Configuración inicial</h1>
+  <h1>Initial setup</h1>
   <p class="sub">Bienvenido. Configura tu instancia de Nexora Status antes de comenzar.</p>
 
   <div class="steps">
@@ -150,9 +150,9 @@
   <!-- PASO 1 — SERVICIOS -->
   <div class="panel" data-panel="1">
     <div class="panel-title">Servicios a monitorear</div>
-    <div class="panel-sub">Agrega secciones y los servicios que quieres vigilar. Puedes omitir esto y configurarlo luego desde el panel.</div>
+    <div class="panel-sub">Add sections and services to monitor. You can skip this and configure it later from the admin panel.</div>
     <div id="svc-sections"></div>
-    <span class="add-link" id="add-section"><i class="fa-solid fa-plus"></i> Añadir sección</span>
+    <span class="add-link" id="add-section"><i class="fa-solid fa-plus"></i> Add section</span>
   </div>
 
   <!-- PASO 2 — APARIENCIA -->
@@ -278,7 +278,7 @@ function renderSections() {
         ${sections.length > 1 ? `<button class="icon-btn" data-remove-sec="${si}"><i class="fa-solid fa-trash"></i></button>` : ""}
       </div>
       <div data-services="${si}"></div>
-      <span class="add-link" data-add-svc="${si}"><i class="fa-solid fa-plus"></i> Añadir servicio</span>
+      <span class="add-link" data-add-svc="${si}"><i class="fa-solid fa-plus"></i> Add service</span>
     `;
     wrap.appendChild(div);
     const svcWrap = div.querySelector(`[data-services="${si}"]`);
@@ -345,7 +345,7 @@ function updateSteps() {
   });
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", +p.dataset.panel === step));
   document.getElementById("btn-back").style.visibility = step === 0 ? "hidden" : "visible";
-  document.getElementById("btn-next").textContent = step === TOTAL_STEPS - 1 ? "Finalizar" : "Siguiente";
+  document.getElementById("btn-next").textContent = step === TOTAL_STEPS - 1 ? "Finish" : "Siguiente";
   if (step === 1) renderSections();
   if (step === TOTAL_STEPS - 1) renderSummary();
 }
@@ -366,12 +366,12 @@ function renderSummary() {
 function validateStep(s) {
   if (s === 0) {
     const tok = document.getElementById("s-admin-token").value;
-    if (tok.length < 16) { showError("Contraseña debe tener al menos 16 caracteres."); return false; }
+    if (tok.length < 16) { showError("Password must be at least 16 characters."); return false; }
   }
   if (s === 1) {
     for (const sec of sections) {
       for (const svc of sec.services) {
-        if (svc.name && !svc.url) { showError(`Falta URL para "${svc.name}".`); return false; }
+        if (svc.name && !svc.url) { showError(`Missing URL for "${svc.name}".`); return false; }
       }
     }
   }
@@ -418,13 +418,13 @@ async function finishSetup() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!data.ok) { showError(data.error ?? "Error al guardar."); btn.disabled = false; btn.textContent = "Finalizar"; return; }
+    if (!data.ok) { showError(data.error ?? "Error saving."); btn.disabled = false; btn.textContent = "Finish"; return; }
     sessionStorage.setItem("nexora_admin_token", payload.adminToken);
     window.location.replace("/admin");
   } catch {
-    showError("Error de conexión.");
+    showError("Connection error.");
     btn.disabled = false;
-    btn.textContent = "Finalizar";
+    btn.textContent = "Finish";
   }
 }
 
