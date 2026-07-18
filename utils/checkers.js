@@ -7,6 +7,8 @@
 import net from "net";
 import dns from "dns/promises";
 import dgram from "dgram";
+import http from "http";
+import https from "https";
 import { exec } from "child_process";
 import { setTimeout as sleep } from "timers/promises";
 
@@ -22,6 +24,54 @@ export function isDnsErrorResult(result) {
   if (!result || result.status !== "down") return false;
   const cause = result.debug?.cause;
   return !!cause && DNS_ERROR_CODES.has(cause);
+}
+
+/* ═══════════════════════════════════════════
+   DNS resolution — public resolver fallback + IP cache
+   Once a hostname resolves, its IP is kept in memory and reused directly
+   (no further DNS lookups) until the process restarts — see
+   POST /admin/api/detector/restart if a domain's IP ever changes.
+═══════════════════════════════════════════ */
+
+const dnsCache = new Map(); // hostname -> ip
+
+const FALLBACK_DNS_SERVERS = [
+  ["1.1.1.1", "1.0.0.1"],               // Cloudflare
+  ["8.8.8.8", "8.8.4.4"],               // Google
+  ["9.9.9.9", "149.112.112.112"],       // Quad9
+  ["208.67.222.222", "208.67.220.220"], // OpenDNS
+];
+
+export function getDnsCacheSnapshot() { return Object.fromEntries(dnsCache); }
+export function clearDnsCache() { dnsCache.clear(); }
+
+async function resolveHost(hostname) {
+  if (net.isIP(hostname)) return hostname;
+
+  const cached = dnsCache.get(hostname);
+  if (cached) return cached;
+
+  // 1) system resolver (respects /etc/resolv.conf, hosts file, etc.)
+  try {
+    const { address } = await dns.lookup(hostname, { family: 4 });
+    dnsCache.set(hostname, address);
+    return address;
+  } catch { /* fall through to public resolvers */ }
+
+  // 2) public fallback resolvers, tried in order until one answers
+  for (const servers of FALLBACK_DNS_SERVERS) {
+    try {
+      const resolver = new dns.Resolver({ timeout: 3000, tries: 1 });
+      resolver.setServers(servers);
+      const addrs = await resolver.resolve4(hostname);
+      if (addrs?.length) {
+        dnsCache.set(hostname, addrs[0]);
+        return addrs[0];
+      }
+    } catch { /* try next resolver */ }
+  }
+
+  throw Object.assign(new Error(`DNS resolution failed for ${hostname} (system + Cloudflare/Google/Quad9/OpenDNS)`), { code: "ENOTFOUND" });
 }
 
 const CLOUDFLARE_INDICATORS = [
@@ -65,6 +115,45 @@ function isCloudflareBlock(bodyText, headers) {
   return CLOUDFLARE_INDICATORS.some(kw => lower.includes(kw));
 }
 
+// http(s) request that resolves the hostname once (via resolveHost's cache
+// + fallback resolvers) and connects straight to that IP, bypassing the
+// system resolver entirely on cache hits. Host header / TLS SNI still use
+// the original hostname, so virtual hosting and certificate checks work.
+async function httpRequestDirect(urlStr, { method, headers, timeoutMs, redirects = 5 }) {
+  const u  = new URL(urlStr);
+  const ip = await resolveHost(u.hostname);
+  const mod = u.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = mod.request(u, {
+      method,
+      headers,
+      timeout: timeoutMs,
+      lookup: (_hostname, _opts, cb) => cb(null, ip, 4),
+    }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
+        res.resume(); // discard body, follow redirect
+        const nextMethod = res.statusCode === 303 ? "GET" : method;
+        const nextUrl = new URL(res.headers.location, u).toString();
+        resolve(httpRequestDirect(nextUrl, { method: nextMethod, headers, timeoutMs, redirects: redirects - 1 }));
+        return;
+      }
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve({
+        status: res.statusCode,
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        headers: { get: (name) => res.headers[name.toLowerCase()] ?? null },
+        text: async () => Buffer.concat(chunks).toString("utf8"),
+      }));
+      res.on("error", reject);
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function runCheck(service) {
   const checkType = service.checkType ?? "http";
 
@@ -93,15 +182,14 @@ async function runCheck(service) {
   }
 
   if (service.url.startsWith("http://") || service.url.startsWith("https://")) {
-    const controller = new AbortController();
-    const timer      = setTimeout(() => controller.abort(), service.timeout ?? TIMEOUT_MS);
-    const start      = Date.now();
+    const timeoutMs = service.timeout ?? TIMEOUT_MS;
+    const start     = Date.now();
     try {
       const method = checkType === "keyword" ? "GET" : (service.method ?? "HEAD");
-      const res = await fetch(service.url, {
+      const res = await httpRequestDirect(service.url, {
         method,
         headers: service.headers ?? {},
-        signal: controller.signal,
+        timeoutMs,
       });
       const latency = Date.now() - start;
 
@@ -147,12 +235,9 @@ async function runCheck(service) {
 
       return { status: "up", code: res.status, latency };
     } catch (err) {
-      const reason = err.name === "AbortError" ? "timeout" : "network";
-      // undici wraps real cause (ECONNRESET, socket hang up, etc.) in err.cause; err.message alone is just "fetch failed".
-      const causeCode = err.cause?.code ?? err.cause?.message ?? null;
+      const reason = err.message === "timeout" ? "timeout" : "network";
+      const causeCode = err.code ?? err.cause?.code ?? null;
       return { status: "down", code: 0, latency: null, error: reason, debug: { exception: err.message, cause: causeCode } };
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -182,31 +267,43 @@ export async function pingService(service) {
 }
 
 export function tcpPing(host, port) {
-  return new Promise(resolve => {
-    const start  = Date.now();
+  return new Promise(async resolve => {
+    const start = Date.now();
+    let ip;
+    try {
+      ip = await resolveHost(host);
+    } catch (err) {
+      return resolve({ status: "down", code: 0, latency: null, error: "connection", debug: { exception: err.message, cause: err.code ?? null } });
+    }
     const socket = new net.Socket();
     socket.setTimeout(TIMEOUT_MS);
     socket.once("connect", () => { socket.destroy(); resolve({ status: "up",   code: 1, latency: Date.now() - start }); });
     socket.once("timeout", () => { socket.destroy(); resolve({ status: "down", code: 0, latency: null, error: "timeout" }); });
     socket.once("error",   (err) => { socket.destroy(); resolve({ status: "down", code: 0, latency: null, error: "connection", debug: { exception: err.message, cause: err.code ?? null } }); });
-    socket.connect(port, host);
+    socket.connect(port, ip);
   });
 }
 
 // UDP: there is no real "connect"; it is considered up if the socket can send without immediate ECONNREFUSED/error.
 function udpPing(host, port) {
-  return new Promise(resolve => {
-    const start  = Date.now();
+  return new Promise(async resolve => {
+    const start = Date.now();
+    let ip;
+    try {
+      ip = await resolveHost(host);
+    } catch (err) {
+      return resolve({ status: "down", code: 0, latency: null, error: "network", debug: { exception: err.message, cause: err.code ?? null } });
+    }
     const socket = dgram.createSocket("udp4");
     const timer  = setTimeout(() => { socket.close(); resolve({ status: "down", code: 0, latency: null, error: "timeout" }); }, TIMEOUT_MS);
 
     socket.once("error", (err) => {
       clearTimeout(timer);
       socket.close();
-      resolve({ status: "down", code: 0, latency: null, error: err.code === "ECONNREFUSED" ? "refused" : "network", debug: { exception: err.message } });
+      resolve({ status: "down", code: 0, latency: null, error: err.code === "ECONNREFUSED" ? "refused" : "network", debug: { exception: err.message, cause: err.code ?? null } });
     });
 
-    socket.send(Buffer.from("ping"), port, host, (err) => {
+    socket.send(Buffer.from("ping"), port, ip, (err) => {
       if (err) return; // handled by "error"
       clearTimeout(timer);
       socket.close();
