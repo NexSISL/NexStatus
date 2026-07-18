@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   SERVICE DETAIL — página completa (SPA)
+   SERVICE DETAIL — full page (SPA)
 ═══════════════════════════════════════════ */
 
 function calcRangeUptime(svc, days) {
@@ -39,6 +39,7 @@ function uptimeTileEl(label, pct) {
 
 function renderServiceDetail(container, svc, allIncidents) {
   container.innerHTML = "";
+  const texts = window.__STATUS_TEXTS__ || {};
 
   /* ── Back nav ────────────────────────────── */
   const nav = document.createElement("div");
@@ -46,12 +47,12 @@ function renderServiceDetail(container, svc, allIncidents) {
 
   const backBtn = document.createElement("button");
   backBtn.className = "svc-back-btn";
-  backBtn.setAttribute("aria-label", "Volver al inicio");
+  backBtn.setAttribute("aria-label", "Back to home");
   const backIcon = document.createElement("i");
   backIcon.className = "fa-solid fa-arrow-left";
   backIcon.setAttribute("aria-hidden", "true");
   backBtn.appendChild(backIcon);
-  backBtn.appendChild(document.createTextNode(" Todos los servicios"));
+  backBtn.appendChild(document.createTextNode(` ${texts["service-detail-back"] || "All services"}`));
   backBtn.addEventListener("click", navigateHome);
   nav.appendChild(backBtn);
 
@@ -66,7 +67,7 @@ function renderServiceDetail(container, svc, allIncidents) {
   nav.appendChild(navBrand);
   container.appendChild(nav);
 
-  /* ── Hero del servicio ────────────────────── */
+  /* ── Service hero ────────────────────── */
   const hero = document.createElement("div");
   hero.className = `svc-hero ${svc.status}`;
 
@@ -97,42 +98,45 @@ function renderServiceDetail(container, svc, allIncidents) {
   const dotEl = document.createElement("span");
   dotEl.className = `svc-status-dot ${svc.status}`;
   statusPill.appendChild(dotEl);
-  statusPill.appendChild(document.createTextNode(svc.status === "up" ? "Operativo" : "Interrumpido"));
+  const statusLabel = svc.status === "up"
+    ? (texts["service-detail-status-operational"] || "Operational")
+    : (svc.status === "down" ? (texts["service-detail-status-down"] || "Disrupted") : (texts["service-detail-status-unknown"] || "Unknown"));
+  statusPill.appendChild(document.createTextNode(statusLabel));
   heroRight.appendChild(statusPill);
 
   const lat = typeof svc.latency === "number" ? svc.latency + " ms" : svc.latency ?? "—";
   const latencyDiv = document.createElement("div");
   latencyDiv.className = "svc-latency-block";
   latencyDiv.appendChild(el("span", lat, "svc-latency-val"));
-  latencyDiv.appendChild(el("span", "latencia actual", "svc-latency-lbl"));
+  latencyDiv.appendChild(el("span", texts["service-detail-latency"] || "current latency", "svc-latency-lbl"));
   heroRight.appendChild(latencyDiv);
 
   if (svc.checkedAt) {
-    heroRight.appendChild(el("div", `Verificado: ${formatDate(svc.checkedAt)}`, "svc-checked"));
+    heroRight.appendChild(el("div", `Checked: ${formatDate(svc.checkedAt)}`, "svc-checked"));
   }
   hero.appendChild(heroRight);
   container.appendChild(hero);
 
-  /* ── Disponibilidad ───────────────────────── */
+  /* ── Availability ───────────────────────── */
   const tilesSection = document.createElement("div");
   tilesSection.className = "svc-section";
-  tilesSection.appendChild(el("div", "Disponibilidad", "svc-section-title"));
+  tilesSection.appendChild(el("div", texts["service-detail-availability"] || "Disponibilidad", "svc-section-title"));
 
   const tilesGrid = document.createElement("div");
   tilesGrid.className = "svc-uptime-tiles";
-  tilesGrid.appendChild(uptimeTileEl("Hoy",     calcRangeUptime(svc, 1)));
-  tilesGrid.appendChild(uptimeTileEl("7 días",  calcRangeUptime(svc, 7)));
-  tilesGrid.appendChild(uptimeTileEl("30 días", calcRangeUptime(svc, 30)));
+  tilesGrid.appendChild(uptimeTileEl("Today",     calcRangeUptime(svc, 1)));
+  tilesGrid.appendChild(uptimeTileEl("7 days",  calcRangeUptime(svc, 7)));
+  tilesGrid.appendChild(uptimeTileEl("30 days", calcRangeUptime(svc, 30)));
   tilesSection.appendChild(tilesGrid);
   container.appendChild(tilesSection);
 
-  /* ── Historial 30 días (calendario) ──────── */
+  /* ── 30-day history (calendar) ──────── */
   const calSection = document.createElement("div");
   calSection.className = "svc-section";
-  calSection.appendChild(el("div", "Historial 30 días", "svc-section-title"));
+  calSection.appendChild(el("div", texts["service-detail-history"] || "Historial 30 días", "svc-section-title"));
   const calLegend = document.createElement("div");
   calLegend.className = "cal-legend";
-  [["excellent","≥ 95%"], ["good","89–95%"], ["poor","< 89%"], ["nm","Sin datos"]].forEach(([cls, label]) => {
+  [["excellent", texts["service-detail-legend-excellent"] || "≥ 95%"], ["good", texts["service-detail-legend-good"] || "89–95%"], ["poor", texts["service-detail-legend-poor"] || "< 89%"], ["nm", texts["service-detail-legend-nodata"] || "Sin datos"]].forEach(([cls, label]) => {
     const item = document.createElement("div");
     item.className = "cal-legend-item";
     const dot = document.createElement("span");
@@ -148,17 +152,17 @@ function renderServiceDetail(container, svc, allIncidents) {
   calSection.appendChild(calContainer);
   container.appendChild(calSection);
 
-  /* ── Historial por hora (24h) ─────────────── */
+  /* ── Hourly history (24h) ─────────────── */
   if (Array.isArray(svc.latencySparkline) && svc.latencySparkline.length > 0) {
     const hourSection = document.createElement("div");
     hourSection.className = "svc-section";
 
     const hourTitleRow = document.createElement("div");
     hourTitleRow.className = "svc-section-title-row";
-    hourTitleRow.appendChild(el("div", "Estado por hora — últimas 24h", "svc-section-title"));
+    hourTitleRow.appendChild(el("div", texts["service-detail-hourly"] || "Estado por hora — últimas 24h", "svc-section-title"));
     const hourLegend = document.createElement("div");
     hourLegend.className = "hourly-legend";
-    [["good","Baja latencia"], ["warn","Alta latencia"], ["bad","Muy alta"], ["na","Sin datos"]].forEach(([cls, label]) => {
+    [["good","Low latency"], ["warn","High latency"], ["bad","Very high"], ["na","No data"]].forEach(([cls, label]) => {
       const item = document.createElement("div");
       item.className = "cal-legend-item";
       const dot = document.createElement("span");
@@ -173,16 +177,16 @@ function renderServiceDetail(container, svc, allIncidents) {
     buildHourlyHistory(hourSection, svc.latencySparkline);
     container.appendChild(hourSection);
 
-    /* ── Sparkline de latencia ────────────────── */
+    /* ── Latency sparkline ────────────────── */
     const sparkSection = document.createElement("div");
     sparkSection.className = "svc-section";
-    sparkSection.appendChild(el("div", "Latencia 24h", "svc-section-title"));
+    sparkSection.appendChild(el("div", texts["service-detail-latency-24h"] || "Latencia 24h", "svc-section-title"));
     const sparkEl = createSparkline(svc.latencySparkline);
     if (sparkEl) sparkSection.appendChild(sparkEl);
     container.appendChild(sparkSection);
   }
 
-  /* ── Incidentes relacionados ──────────────── */
+  /* ── Related incidents ──────────────── */
   const related = (allIncidents ?? [])
     .filter(i => i.serviceId === svc.id || i.serviceName === svc.name)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -190,7 +194,7 @@ function renderServiceDetail(container, svc, allIncidents) {
 
   const incSection = document.createElement("div");
   incSection.className = "svc-section";
-  incSection.appendChild(el("div", "Incidentes relacionados", "svc-section-title"));
+  incSection.appendChild(el("div", texts["service-detail-related-incidents"] || "Incidentes relacionados", "svc-section-title"));
 
   if (related.length === 0) {
     const noData = document.createElement("div");
@@ -199,7 +203,7 @@ function renderServiceDetail(container, svc, allIncidents) {
     checkIcon.className = "fa-solid fa-circle-check";
     checkIcon.setAttribute("aria-hidden", "true");
     noData.appendChild(checkIcon);
-    noData.appendChild(document.createTextNode(" Sin incidentes registrados"));
+    noData.appendChild(document.createTextNode(` ${texts["service-detail-no-incidents"] || "No incidents recorded"}`));
     incSection.appendChild(noData);
   } else {
     related.forEach(inc => incSection.appendChild(renderIncidentCard(inc, false)));
@@ -209,6 +213,6 @@ function renderServiceDetail(container, svc, allIncidents) {
   /* ── Footer ───────────────────────────────── */
   const footer = document.createElement("footer");
   footer.className = "svc-footer";
-  footer.textContent = `© ${new Date().getFullYear()} Nexora – Status Monitor`;
+  footer.textContent = `© ${new Date().getFullYear()} ${texts["footer-default"] || "Nexora – Status Monitor"}`;
   container.appendChild(footer);
 }

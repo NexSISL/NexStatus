@@ -6,7 +6,7 @@ let _allStatusData = null;
 let tooltipEl = null;
 
 /* ═══════════════════════════════════════════
-   SEGURIDAD — Sanitización anti-XSS
+   SECURITY — XSS sanitization
 ═══════════════════════════════════════════ */
 function esc(str) {
   if (str == null) return "";
@@ -44,13 +44,13 @@ function getServerTodayKey() {
 ═══════════════════════════════════════════ */
 function formatDate(date) {
   try {
-    return new Date(date).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+    return new Date(date).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   } catch { return "—"; }
 }
 
 function formatDateOnly(dateStr) {
   try {
-    return new Date(dateStr + "T12:00:00").toLocaleDateString("es-MX", {
+    return new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", {
       day: "numeric", month: "short", year: "numeric",
     });
   } catch { return "—"; }
@@ -61,10 +61,10 @@ function formatRelative(isoStr) {
   const m = Math.floor(diff / 60_000);
   const h = Math.floor(m / 60);
   const d = Math.floor(h / 24);
-  if (d > 0) return `hace ${d}d`;
-  if (h > 0) return `hace ${h}h`;
-  if (m > 0) return `hace ${m}m`;
-  return "justo ahora";
+  if (d > 0) return `${d}d ago`;
+  if (h > 0) return `${h}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return "just now";
 }
 
 function truncate3(v) { return Math.trunc(v * 1000) / 1000; }
@@ -104,11 +104,11 @@ function formatDuration(fromIso, toIso) {
    INCIDENT BADGE
 ═══════════════════════════════════════════ */
 const BADGE_MAP = {
-  investigating: { cls: "badge-investigating", label: "Investigando" },
-  identified:    { cls: "badge-identified",    label: "Identificado" },
-  monitoring:    { cls: "badge-monitoring",    label: "Monitoreando" },
-  resolved:      { cls: "badge-resolved",      label: "Resuelto" },
-  maintenance:   { cls: "badge-maintenance",   label: "Mantenimiento" },
+  investigating: { cls: "badge-investigating", label: "Investigating" },
+  identified:    { cls: "badge-identified",    label: "Identified" },
+  monitoring:    { cls: "badge-monitoring",    label: "Monitoring" },
+  resolved:      { cls: "badge-resolved",      label: "Resolved" },
+  maintenance:   { cls: "badge-maintenance",   label: "Maintenance" },
 };
 
 function incidentBadgeEl(status) {
@@ -132,9 +132,9 @@ function showTooltip(e, dot) {
   tooltipEl.className = "tooltip";
 
   if (!isMonitored) {
-    tooltipEl.textContent = `No monitoreado • ${ts ? formatDateOnly(ts) : "—"}`;
+    tooltipEl.textContent = `Not monitored • ${ts ? formatDateOnly(ts) : "—"}`;
   } else if (isToday) {
-    const now = new Date().toLocaleString("es-MX", {
+    const now = new Date().toLocaleString("en-US", {
       day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
     tooltipEl.textContent = `${percent} uptime • ${now}`;

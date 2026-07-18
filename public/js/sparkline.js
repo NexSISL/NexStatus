@@ -46,7 +46,7 @@ function createSparkline(data) {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `Gráfica de latencia promedio: ${avgLat} ms`);
+  svg.setAttribute("aria-label", `Average latency chart: ${avgLat} ms`);
 
   const defs = document.createElementNS(NS, "defs");
   const grad = document.createElementNS(NS, "linearGradient");

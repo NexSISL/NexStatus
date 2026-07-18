@@ -1,59 +1,105 @@
 /* ═══════════════════════════════════════════
-   APARIENCIA — aplica config dinámica (logo, favicon,
-   fondo, fuente, footer, título) desde /api/config
+   APARIENCIA — aplica config dinámica y textos localizados
 ═══════════════════════════════════════════ */
-(async function applyAppearance() {
-  let cfg;
+
+const SUPPORTED_LANGS = ["es", "en"];
+
+async function fetchLang(lang) {
+  const l = SUPPORTED_LANGS.includes(lang) ? lang : "en";
+  try {
+    const res = await fetch(`/lang/${l}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function getActiveTexts(base = {}, cfg = {}) {
+  const custom = cfg.texts && typeof cfg.texts === "object" ? cfg.texts : {};
+  return Object.fromEntries(
+    Object.entries(base).map(([key, fallback]) => [key, custom[key] || fallback])
+  );
+}
+
+function applyTextOverrides(texts = {}, cfg = {}) {
+  document.documentElement.lang = cfg.language === "es" ? "es" : "en";
+  document.querySelectorAll("[data-text-key]").forEach(el => {
+    const key = el.getAttribute("data-text-key");
+    if (key && texts[key]) el.textContent = texts[key];
+  });
+  const titleEl = document.getElementById("brand-title");
+  if (titleEl && cfg.siteTitle) titleEl.textContent = cfg.siteTitle;
+  const subtitleEl = document.getElementById("brand-subtitle");
+  if (subtitleEl && texts["brand-subtitle"]) subtitleEl.textContent = texts["brand-subtitle"];
+  const footerTextEl = document.getElementById("footer-text-content");
+  if (footerTextEl) footerTextEl.textContent = cfg.footerText || texts["footer-default"] || "";
+  const siteStatusEl = document.getElementById("site-status");
+  if (siteStatusEl && !siteStatusEl.dataset.customText) siteStatusEl.textContent = texts["hero-status-loading"] || "";
+  return texts;
+}
+
+window.__appearanceReady = (async function applyAppearance() {
+  const loadingShell = document.getElementById("app-loading-shell");
+  let cfg = {};
   try {
     const res = await fetch("/api/config", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     cfg = await res.json();
-  } catch { return; }
+  } catch {
+    cfg = {};
+  }
+
+  const lang = cfg.language === "es" ? "es" : "en";
+  const base = await fetchLang(lang);
+  const texts = getActiveTexts(base, cfg);
+  applyTextOverrides(texts, cfg);
 
   const root = document.documentElement.style;
+  const appearance = cfg || {};
 
-  if (cfg.fontFamily) {
-    root.setProperty("--font-family", `${cfg.fontFamily}, system-ui, sans-serif`);
-    if (cfg.fontFamily !== "Inter" && !document.querySelector(`link[data-font="${cfg.fontFamily}"]`)) {
+  if (appearance.fontFamily) {
+    root.setProperty("--font-family", `${appearance.fontFamily}, system-ui, sans-serif`);
+    if (appearance.fontFamily !== "Inter" && !document.querySelector(`link[data-font="${appearance.fontFamily}"]`)) {
       const link = document.createElement("link");
-      link.rel  = "stylesheet";
-      link.dataset.font = cfg.fontFamily;
-      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(cfg.fontFamily).replace(/%20/g, "+")}:wght@400;500;600;700;800&display=swap`;
+      link.rel = "stylesheet";
+      link.dataset.font = appearance.fontFamily;
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(appearance.fontFamily).replace(/%20/g, "+")}:wght@400;500;600;700;800&display=swap`;
       document.head.appendChild(link);
     }
   }
-  if (cfg.accentColor) {
-    const hex = cfg.accentColor.replace("#", "");
+  if (appearance.accentColor) {
+    const hex = appearance.accentColor.replace("#", "");
     const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16)).join(" ");
     root.setProperty("--accent", rgb);
   }
-  if (cfg.backgroundType === "solid" && cfg.backgroundSolidColor) {
+  if (appearance.backgroundType === "solid" && appearance.backgroundSolidColor) {
     root.setProperty("--page-bg-image", "none");
-    root.setProperty("--page-bg-solid", cfg.backgroundSolidColor);
-  } else if (cfg.backgroundType === "image" && cfg.backgroundImageUrl) {
-    root.setProperty("--page-bg-image", `url(${cfg.backgroundImageUrl})`);
+    root.setProperty("--page-bg-solid", appearance.backgroundSolidColor);
+  } else if (appearance.backgroundType === "image" && appearance.backgroundImageUrl) {
+    root.setProperty("--page-bg-image", `url(${appearance.backgroundImageUrl})`);
   }
 
-  if (cfg.siteTitle) {
-    document.title = `${cfg.siteTitle} – Nexora`;
-    document.querySelectorAll(".title strong").forEach(el => { el.textContent = cfg.siteTitle; });
+  if (appearance.siteTitle) {
+    document.title = `${appearance.siteTitle} – Nexora`;
+    const titleEl = document.getElementById("brand-title");
+    if (titleEl) titleEl.textContent = appearance.siteTitle;
   }
-  if (cfg.logoUrl) {
-    document.querySelectorAll(".logo img").forEach(el => { el.src = cfg.logoUrl; });
+  if (appearance.logoUrl) {
+    const logoEl = document.getElementById("brand-logo");
+    if (logoEl) logoEl.src = appearance.logoUrl;
   }
-  if (cfg.faviconUrl) {
-    document.querySelectorAll("link[rel='icon']").forEach(el => { el.href = cfg.faviconUrl; });
+  if (appearance.faviconUrl) {
+    document.querySelectorAll("link[rel='icon']").forEach(el => { el.href = appearance.faviconUrl; });
   }
-  if (cfg.footerText) {
-    document.querySelectorAll("footer").forEach(el => {
-      const safe = document.createTextNode(cfg.footerText);
-      el.innerHTML = "";
-      el.appendChild(safe);
-      const y = document.createElement("span");
-      y.id = "year";
-      y.textContent = new Date().getFullYear();
-      el.appendChild(document.createTextNode(" "));
-      el.appendChild(y);
-    });
+  if (appearance.footerText) {
+    const footerTextEl = document.getElementById("footer-text-content");
+    if (footerTextEl) footerTextEl.textContent = appearance.footerText;
   }
+
+  const viewHome = document.getElementById("view-home");
+  if (loadingShell) loadingShell.remove();
+  if (viewHome) viewHome.hidden = false;
+  window.__STATUS_TEXTS__ = texts;
+  window.__STATUS_LANG__ = lang;
 })();

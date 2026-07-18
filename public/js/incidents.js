@@ -13,7 +13,7 @@ function renderIncidentCard(inc, collapsed = false) {
   card.appendChild(header);
 
   const duration = inc.resolvedAt
-    ? ` • Duración: ${formatDuration(inc.createdAt, inc.resolvedAt)}`
+    ? ` • Duration: ${formatDuration(inc.createdAt, inc.resolvedAt)}`
     : "";
 
   const metaEl = document.createElement("div");
@@ -63,7 +63,7 @@ function renderIncidents(incidents) {
     icon.className = "fa-solid fa-triangle-exclamation";
     icon.setAttribute("aria-hidden", "true");
     title.appendChild(icon);
-    title.appendChild(document.createTextNode(" Incidentes activos"));
+    title.appendChild(document.createTextNode(" Active incidents"));
     section.appendChild(title);
 
     active.forEach(inc => section.appendChild(renderIncidentCard(inc)));
@@ -86,7 +86,7 @@ function renderIncidents(incidents) {
     histIcon.className = "fa-solid fa-clock-rotate-left";
     histIcon.setAttribute("aria-hidden", "true");
     sectionTitle.appendChild(histIcon);
-    sectionTitle.appendChild(document.createTextNode(" Historial reciente"));
+    sectionTitle.appendChild(document.createTextNode(" Recent history"));
     titleRow.appendChild(sectionTitle);
     section.appendChild(titleRow);
 
@@ -109,8 +109,8 @@ function renderIncidents(incidents) {
         toggle.appendChild(chevron);
         toggle.appendChild(document.createTextNode(
           expanded
-            ? " Mostrar menos"
-            : ` Ver ${remaining} incidente${remaining > 1 ? "s" : ""} anterior${remaining > 1 ? "es" : ""}`
+            ? " Show less"
+            : ` View ${remaining} previous incident${remaining > 1 ? "s" : ""}`
         ));
       };
       updateLabel();

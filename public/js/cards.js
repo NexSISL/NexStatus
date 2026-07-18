@@ -23,7 +23,7 @@ function createQuickViewCard(service) {
   article.className = "quick-view-item";
   article.setAttribute("role", "button");
   article.setAttribute("tabindex", "0");
-  article.setAttribute("aria-label", `${service.name}: ${service.status === "up" ? "Operativo" : "Interrumpido"}`);
+  article.setAttribute("aria-label", `${service.name}: ${service.status === "up" ? "Operational" : "Disrupted"}`);
   if (service.status === "down") article.classList.add("service-down");
 
   const latencyText     = typeof service?.latency === "number" ? `${service.latency} ms` : service?.latency ?? "—";
@@ -52,7 +52,7 @@ function createQuickViewCard(service) {
   right.className = "quick-view-right";
   const statusSpan = document.createElement("span");
   statusSpan.className = `quick-view-status ${service.status}`;
-  statusSpan.textContent = service.status === "up" ? "Operativo" : "Interrumpido";
+  statusSpan.textContent = service.status === "up" ? "Operational" : "Disrupted";
   right.appendChild(statusSpan);
 
   article.appendChild(left);
@@ -73,7 +73,7 @@ function createCard(service) {
   card.className = "card";
   card.setAttribute("role", "button");
   card.setAttribute("tabindex", "0");
-  card.setAttribute("aria-label", `${service.name}: ${service.status === "up" ? "Operativo" : "Interrumpido"}`);
+  card.setAttribute("aria-label", `${service.name}: ${service.status === "up" ? "Operational" : "Disrupted"}`);
 
   const uptimeText     = formatPercent(service?.onlineper ?? NaN) + " uptime";
   const latencyText    = typeof service?.latency === "number" ? `${service.latency} ms` : service?.latency ?? "—";
@@ -103,7 +103,7 @@ function createCard(service) {
 
   const pill = document.createElement("span");
   pill.className = `pill ${service.status}`;
-  pill.textContent = service.status === "up" ? "Operativo" : "Interrumpido";
+  pill.textContent = service.status === "up" ? "Operational" : "Disrupted";
 
   const uptimeSpan = document.createElement("span");
   uptimeSpan.style.cssText = "font-size:13px;color:rgb(148,163,184);";
@@ -128,7 +128,7 @@ function createCard(service) {
 }
 
 /* ═══════════════════════════════════════════
-   RENDER POR SECCIONES
+   RENDER BY SECTIONS
 ═══════════════════════════════════════════ */
 function renderBySections(sections, serviceMap, quickContainer, detailContainer) {
   quickContainer.innerHTML  = "";

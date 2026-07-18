@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════
-   CALENDAR HISTORY — 30 días
-   Formato tipo GitHub: filas = semanas, cols = día-semana
+   CALENDAR HISTORY — 30 days
+   GitHub-style: rows = weeks, cols = weekday
 ═══════════════════════════════════════════ */
-const DAY_LABELS_ES = ["L", "M", "X", "J", "V", "S", "D"];
+const DAY_LABELS_ES = ["M", "T", "W", "T", "F", "S", "S"];
 
 function buildCalendarHistory(container, history) {
   const histMap = {};
@@ -11,17 +11,17 @@ function buildCalendarHistory(container, history) {
   const serverNow  = getServerNow();
   const todayKey   = `${serverNow.getFullYear()}-${pad(serverNow.getMonth() + 1)}-${pad(serverNow.getDate())}`;
 
-  // Ventana: 30 días hacia atrás
+  // Window: 30 days back
   const windowStart = new Date(serverNow);
   windowStart.setDate(windowStart.getDate() - 29);
   windowStart.setHours(0, 0, 0, 0);
 
-  // Retroceder al lunes de esa semana (0=Dom → 6, 1=Lun → 0, ...)
+  // Rewind to Monday of that week (0=Sun → 6, 1=Mon → 0, ...)
   const wd0 = windowStart.getDay() === 0 ? 6 : windowStart.getDay() - 1;
   const gridStart = new Date(windowStart);
   gridStart.setDate(gridStart.getDate() - wd0);
 
-  // Avanzar hasta el domingo de la semana actual
+  // Advance to Sunday of current week
   const todayWd = serverNow.getDay() === 0 ? 6 : serverNow.getDay() - 1;
   const gridEnd = new Date(serverNow);
   gridEnd.setDate(gridEnd.getDate() + (6 - todayWd));
@@ -30,7 +30,7 @@ function buildCalendarHistory(container, history) {
   const totalDays = Math.ceil((gridEnd - gridStart) / 86_400_000) + 1;
   const numWeeks  = Math.ceil(totalDays / 7);
 
-  // ── Cabecera día-semana ──────────────────
+  // ── Weekday header ──────────────────────
   const header = document.createElement("div");
   header.className = "cal-header";
   DAY_LABELS_ES.forEach(d => {
@@ -41,7 +41,7 @@ function buildCalendarHistory(container, history) {
   });
   container.appendChild(header);
 
-  // ── Grid ────────────────────────────────
+  // ── Grid ───────────────────────────────
   const grid = document.createElement("div");
   grid.className = "cal-grid";
 
@@ -58,10 +58,10 @@ function buildCalendarHistory(container, history) {
       const inWindow = cellDate >= windowStart && cellDate <= gridEnd;
       const isFuture = cellDate > serverNow;
 
-      // Detectar inicio de mes para labels
+      // Detect month start for labels
       if (inWindow && !isFuture && dayIdx === 0 && cellDate.getMonth() !== lastMonthLabel) {
         lastMonthLabel = cellDate.getMonth();
-        monthBreaks.push({ weekIdx: week, label: cellDate.toLocaleDateString("es-MX", { month: "short" }) });
+        monthBreaks.push({ weekIdx: week, label: cellDate.toLocaleDateString("en-US", { month: "short" }) });
       }
 
       const cell = document.createElement("div");
@@ -93,7 +93,7 @@ function buildCalendarHistory(container, history) {
           cell.dataset.time      = key;
           cell.dataset.monitored = "false";
           cell.dataset.isToday   = "false";
-          cell.setAttribute("aria-label", `${formatDateOnly(key)}: sin datos`);
+          cell.setAttribute("aria-label", `${formatDateOnly(key)}: no data`);
         }
 
         if (key === todayKey) cell.classList.add("today");
@@ -107,7 +107,7 @@ function buildCalendarHistory(container, history) {
   }
   container.appendChild(grid);
 
-  // ── Labels de mes debajo ─────────────────
+  // ── Month labels below ─────────────────
   if (monthBreaks.length) {
     const monthRow = document.createElement("div");
     monthRow.className = "cal-month-row";
@@ -129,7 +129,7 @@ function createHistory(history = []) {
   const container = document.createElement("div");
   container.className = "history";
   container.setAttribute("role", "list");
-  container.setAttribute("aria-label", "Historial de disponibilidad últimos 30 días");
+  container.setAttribute("aria-label", "30-day availability history");
 
   const serverNow    = getServerNow();
   const todayKey     = `${serverNow.getFullYear()}-${pad(serverNow.getMonth() + 1)}-${pad(serverNow.getDate())}`;
@@ -160,7 +160,7 @@ function createHistory(history = []) {
       dot.dataset.percent   = "—";
       dot.dataset.monitored = "false";
       dot.dataset.isToday   = "false";
-      dot.setAttribute("aria-label", `${formatDateOnly(key)}: no monitoreado`);
+      dot.setAttribute("aria-label", `${formatDateOnly(key)}: not monitored`);
     }
 
     dot.addEventListener("mouseenter", e => showTooltip(e, dot));
@@ -173,25 +173,25 @@ function createHistory(history = []) {
 }
 
 /* ═══════════════════════════════════════════
-   HOURLY HISTORY — últimas 24 horas
-   Usa latencySparkline como proxy de estado por hora
+   HOURLY HISTORY — last 24 hours
+   Uses latencySparkline as hourly status proxy
 ═══════════════════════════════════════════ */
 function buildHourlyHistory(container, latencySparkline) {
   const points = Array.isArray(latencySparkline) ? latencySparkline : [];
 
-  // Mapa: clave "YYYY-MM-DDTHH" → avgLatency
+  // Map: key "YYYY-MM-DDTHH" → avgLatency
   const hourMap = {};
   for (const p of points) {
     if (p?.hour) hourMap[p.hour.slice(0, 13)] = p.avgLatency;
   }
 
-  // Calcular umbrales de color basados en percentiles de los datos
+  // Compute color thresholds based on data percentiles
   const vals = Object.values(hourMap).filter(v => v != null).sort((a, b) => a - b);
   const median    = vals.length ? vals[Math.floor(vals.length * 0.5)] : 150;
   const threshWarn = Math.max(median * 2.5, 300);
   const threshBad  = Math.max(median * 6,   800);
 
-  // Últimas 24 horas completas
+  // Last 24 complete hours
   const now = new Date();
   const cells = [];
   for (let i = 23; i >= 0; i--) {
@@ -201,7 +201,7 @@ function buildHourlyHistory(container, latencySparkline) {
     cells.push({ key, lat: hourMap[key] ?? null, hour: d.getHours(), date: d });
   }
 
-  // Grid de 24 celdas
+  // 24-cell grid
   const grid = document.createElement("div");
   grid.className = "hourly-grid";
 
@@ -219,8 +219,8 @@ function buildHourlyHistory(container, latencySparkline) {
       cell.classList.add("bad");
     }
 
-    const timeLabel = date.toLocaleString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const tipText   = lat != null ? `${timeLabel} — ${lat} ms` : `${timeLabel} — sin datos`;
+    const timeLabel = date.toLocaleString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const tipText   = lat != null ? `${timeLabel} — ${lat} ms` : `${timeLabel} — no data`;
 
     cell.addEventListener("mouseenter", e => showSimpleTooltip(e, tipText));
     cell.addEventListener("mousemove",  moveTooltip);
@@ -230,7 +230,7 @@ function buildHourlyHistory(container, latencySparkline) {
 
   container.appendChild(grid);
 
-  // Etiquetas cada 6 horas (00 / 06 / 12 / 18)
+  // Labels every 6 hours (00 / 06 / 12 / 18)
   const labelRow = document.createElement("div");
   labelRow.className = "hourly-labels";
   cells.forEach(({ hour }) => {

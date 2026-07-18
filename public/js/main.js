@@ -113,6 +113,7 @@ async function loadStatus() {
     const lastChecked = document.getElementById("last-checked");
     const siteStatusEl = document.getElementById("site-status");
     const statusDotEl  = document.querySelector(".status-dot");
+    const texts = window.__STATUS_TEXTS__ || {};
 
     if (uptimeEl) uptimeEl.textContent = formatPercent(data.totalonline);
 
@@ -129,15 +130,15 @@ async function loadStatus() {
 
     if (siteStatusEl && statusDotEl) {
       if (total === 0 || (down === 0 && active === 0)) {
-        siteStatusEl.textContent = "Todos los sistemas operativos";
+        siteStatusEl.textContent = texts["hero-status-up"] || "Todos los sistemas operativos";
         statusDotEl.className    = "status-dot status-up pulse";
       } else if (down < total) {
         siteStatusEl.textContent = active > 0
           ? `${active} incidente${active > 1 ? "s" : ""} activo${active > 1 ? "s" : ""}`
-          : "Algunos servicios están degradados";
+          : (texts["hero-status-degraded"] || "Algunos servicios están degradados");
         statusDotEl.className = "status-dot status-degraded";
       } else {
-        siteStatusEl.textContent = "Todos los servicios caídos";
+        siteStatusEl.textContent = texts["hero-status-down"] || "Todos los servicios caídos";
         statusDotEl.className    = "status-dot status-down";
       }
     }
@@ -195,9 +196,11 @@ async function loadStatus() {
 /* ═══════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════ */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const yearEl = document.getElementById("year");
   if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+  await (window.__appearanceReady || Promise.resolve());
 
   // Resolver hash inicial antes del fetch
   handleRoute();

@@ -50,12 +50,12 @@ function renderAnnouncements(announcements) {
     content.className = "announcement-content";
     content.appendChild(el("div", a.title, "announcement-title"));
     if (a.body) content.appendChild(el("div", a.body, "announcement-body"));
-    if (a.endsAt) content.appendChild(el("div", `Hasta: ${formatDate(a.endsAt)}`, "announcement-meta"));
+    if (a.endsAt) content.appendChild(el("div", `Until: ${formatDate(a.endsAt)}`, "announcement-meta"));
     annEl.appendChild(content);
 
     const closeBtn = document.createElement("button");
     closeBtn.className = "announcement-close";
-    closeBtn.setAttribute("aria-label", "Cerrar anuncio");
+    closeBtn.setAttribute("aria-label", "Close announcement");
     const closeIcon = document.createElement("i");
     closeIcon.className = "fa-solid fa-xmark";
     closeIcon.setAttribute("aria-hidden", "true");
