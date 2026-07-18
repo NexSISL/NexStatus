@@ -8,8 +8,21 @@ import net from "net";
 import dns from "dns/promises";
 import dgram from "dgram";
 import { exec } from "child_process";
+import { setTimeout as sleep } from "timers/promises";
 
 export const TIMEOUT_MS = 10_000;
+
+// Transient local/upstream DNS resolver failures — retried before being
+// treated as a real outage, since they often self-heal within seconds.
+export const DNS_ERROR_CODES = new Set(["ENOTFOUND", "EAI_AGAIN", "ENODATA"]);
+const DNS_RETRY_ATTEMPTS      = 2;     // extra attempts after the first failure
+const DNS_RETRY_BASE_DELAY_MS = 1_200; // backoff: 1.2s, then 2.4s
+
+export function isDnsErrorResult(result) {
+  if (!result || result.status !== "down") return false;
+  const cause = result.debug?.cause;
+  return !!cause && DNS_ERROR_CODES.has(cause);
+}
 
 const CLOUDFLARE_INDICATORS = [
   "cloudflare", "cf-ray", "attention required", "one moment", "just a moment",
@@ -52,7 +65,7 @@ function isCloudflareBlock(bodyText, headers) {
   return CLOUDFLARE_INDICATORS.some(kw => lower.includes(kw));
 }
 
-export async function pingService(service) {
+async function runCheck(service) {
   const checkType = service.checkType ?? "http";
 
   if (checkType === "tcp") {
@@ -148,6 +161,26 @@ export async function pingService(service) {
   return tcpPing(host, Number(port));
 }
 
+/**
+ * Entry point used by the rest of the app. Wraps runCheck() with a short
+ * retry+backoff specifically for DNS resolution failures (ENOTFOUND, EAI_AGAIN,
+ * ENODATA) — these are frequently transient local/upstream resolver hiccups,
+ * not the target actually being down, and were causing false "down" reports.
+ */
+export async function pingService(service) {
+  let result = await runCheck(service);
+  let retries = 0;
+  while (isDnsErrorResult(result) && retries < DNS_RETRY_ATTEMPTS) {
+    retries++;
+    await sleep(DNS_RETRY_BASE_DELAY_MS * retries);
+    result = await runCheck(service);
+  }
+  if (retries > 0) {
+    result.debug = { ...(result.debug ?? {}), dnsRetries: retries };
+  }
+  return result;
+}
+
 export function tcpPing(host, port) {
   return new Promise(resolve => {
     const start  = Date.now();
@@ -155,7 +188,7 @@ export function tcpPing(host, port) {
     socket.setTimeout(TIMEOUT_MS);
     socket.once("connect", () => { socket.destroy(); resolve({ status: "up",   code: 1, latency: Date.now() - start }); });
     socket.once("timeout", () => { socket.destroy(); resolve({ status: "down", code: 0, latency: null, error: "timeout" }); });
-    socket.once("error",   (err) => { socket.destroy(); resolve({ status: "down", code: 0, latency: null, error: "connection", debug: { exception: err.message } }); });
+    socket.once("error",   (err) => { socket.destroy(); resolve({ status: "down", code: 0, latency: null, error: "connection", debug: { exception: err.message, cause: err.code ?? null } }); });
     socket.connect(port, host);
   });
 }

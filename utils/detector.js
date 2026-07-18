@@ -16,7 +16,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { setTimeout as sleep } from "timers/promises";
-import { pingService, tcpPing } from "./checkers.js";
+import { pingService, tcpPing, isDnsErrorResult } from "./checkers.js";
 import { info, success, error, warn } from "./console.js";
 
 /* ═══════════════════════════════════════════
@@ -193,6 +193,20 @@ const STABLE_CHECKS_REQUIRED = 5;
 const DOWN_CONFIRM_CHECKS  = 2;
 const DOWN_CONFIRM_DELAY   = 5_000; // ms between each confirmatory check
 
+// DNS-classified failures (ENOTFOUND, EAI_AGAIN, ENODATA) get a longer, more
+// patient confirmation window — local/upstream resolver blips regularly
+// outlast the standard 2×5s window and were causing repeated false outages.
+const DOWN_CONFIRM_CHECKS_DNS = 4;
+const DOWN_CONFIRM_DELAY_DNS  = 10_000;
+
+// Correlated-failure guard: if several services fail with DNS errors in the
+// same cycle, it is almost certainly a local resolver/network issue rather
+// than every one of those targets going down at once. Skip opening new
+// incidents for DNS-classified failures while this holds, and re-evaluate
+// next cycle instead.
+const CORRELATED_DNS_MIN_CHECKED = 2;
+const CORRELATED_DNS_RATIO       = 0.5;
+
 // Pending embed queue to avoid flooding (delay between each)
 let _embedSendQueue = Promise.resolve();
 
@@ -289,11 +303,11 @@ function buildUpdateEmbed(service, incident, update) {
  * to confirm that the service is actually down before opening an incident.
  * Returns true if all confirmatory checks are also DOWN.
  */
-async function confirmDown(service) {
-  for (let i = 1; i <= DOWN_CONFIRM_CHECKS; i++) {
-    await sleep(DOWN_CONFIRM_DELAY);
+async function confirmDown(service, checks = DOWN_CONFIRM_CHECKS, delay = DOWN_CONFIRM_DELAY) {
+  for (let i = 1; i <= checks; i++) {
+    await sleep(delay);
     const result = await pingService(service);
-    info(`[Incidents] 🔎 ${service.id} — Confirmatory check ${i}/${DOWN_CONFIRM_CHECKS}: ${result.status}`);
+    info(`[Incidents] 🔎 ${service.id} — Confirmatory check ${i}/${checks}: ${result.status}`);
     if (result.status === "up") {
       info(`[Incidents] ✅ ${service.id} — False positive discarded at confirmatory check ${i}`);
       return false;
@@ -302,18 +316,25 @@ async function confirmDown(service) {
   return true;
 }
 
-async function handleServiceDown(store, service) {
+async function handleServiceDown(store, service, initialResult = null) {
   store.incidents    ??= [];
   store.announcements ??= [];
 
   if (store.incidents.find(i => i.serviceId === service.id && !i.resolvedAt)) return;
 
-  // ── Confirmatory checks: 2 additional pings with 5s intervals ──────
+  const dnsIssue = isDnsErrorResult(initialResult);
+  const checks   = dnsIssue ? DOWN_CONFIRM_CHECKS_DNS : DOWN_CONFIRM_CHECKS;
+  const delay    = dnsIssue ? DOWN_CONFIRM_DELAY_DNS : DOWN_CONFIRM_DELAY;
+
+  // ── Confirmatory checks before opening an incident ──────
   // If any responds UP → false positive, do not open incident.
-  info(`[Incidents] ⚠ ${service.id} — Outage detected. Running ${DOWN_CONFIRM_CHECKS} confirmatory checks (every ${DOWN_CONFIRM_DELAY / 1000}s)…`);
-  const confirmed = await confirmDown(service);
+  if (dnsIssue) {
+    info(`[Incidents] 🌐 ${service.id} — Initial failure is DNS-classified (${initialResult.debug?.cause}). Using extended confirmation window.`);
+  }
+  info(`[Incidents] ⚠ ${service.id} — Outage detected. Running ${checks} confirmatory checks (every ${delay / 1000}s)…`);
+  const confirmed = await confirmDown(service, checks, delay);
   if (!confirmed) return false; // false positive — service recovered during confirmatory checks
-  info(`[Incidents] 🔴 ${service.id} — Outage confirmed after ${DOWN_CONFIRM_CHECKS} checks. Opening incident.`);
+  info(`[Incidents] 🔴 ${service.id} — Outage confirmed after ${checks} checks. Opening incident.`);
 
   const now        = new Date().toISOString();
   const incidentId = `inc-${Date.now()}`;
@@ -547,6 +568,7 @@ async function runCheck(sections, forceAll = false) {
   const now            = Date.now();
 
   let httpChecked = 0, networkErrors = 0;
+  let dnsCheckedCount = 0, dnsErrorCount = 0;
 
   for (const service of SERVICES) {
     const intervalMs = (service.checkInterval ?? 60) * 1_000;
@@ -596,6 +618,9 @@ async function runCheck(sections, forceAll = false) {
     }
 
     const result = await pingService(service);
+
+    dnsCheckedCount++;
+    if (isDnsErrorResult(result)) dnsErrorCount++;
 
     if (service.url.startsWith("http")) {
       httpChecked++;
@@ -731,12 +756,24 @@ async function runCheck(sections, forceAll = false) {
     if (!isNew && prevStatus) {
       if (result.status === "down") {
         if (!hasOpenIncident) {
-          // handleServiceDown makes confirmatory checks internally (2 × 5s)
-          const opened = await handleServiceDown(store, service);
-          if (opened === false) {
-            // False positive: the service recovered during confirmatory checks. Mark the last check as "up" to avoid false downtime.
+          const dnsIssue   = isDnsErrorResult(result);
+          const correlated = dnsIssue
+            && dnsCheckedCount >= CORRELATED_DNS_MIN_CHECKED
+            && (dnsErrorCount / dnsCheckedCount) >= CORRELATED_DNS_RATIO;
+
+          if (correlated) {
+            warn(`[Incidents] 🌐 ${service.id} — Skipping incident: ${dnsErrorCount}/${dnsCheckedCount} services failing with DNS errors this cycle (likely local resolver/network issue, not a real outage). Re-evaluating next cycle.`);
+            // Don't count this check against uptime — it's a suspected false alarm.
             const last = svc.currentHour.checks[svc.currentHour.checks.length - 1];
             if (last && last.status === "down") last.status = "up";
+          } else {
+            // handleServiceDown makes confirmatory checks internally (2×5s, or 4×10s for DNS-classified failures)
+            const opened = await handleServiceDown(store, service, result);
+            if (opened === false) {
+              // False positive: the service recovered during confirmatory checks. Mark the last check as "up" to avoid false downtime.
+              const last = svc.currentHour.checks[svc.currentHour.checks.length - 1];
+              if (last && last.status === "down") last.status = "up";
+            }
           }
         } else if (inMonitoring) {
           const inc = store.incidents.find(i => i.serviceId === service.id && !i.resolvedAt);
