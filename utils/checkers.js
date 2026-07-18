@@ -45,33 +45,50 @@ const FALLBACK_DNS_SERVERS = [
 export function getDnsCacheSnapshot() { return Object.fromEntries(dnsCache); }
 export function clearDnsCache() { dnsCache.clear(); }
 
-async function resolveHost(hostname) {
-  if (net.isIP(hostname)) return hostname;
-
-  const cached = dnsCache.get(hostname);
-  if (cached) return cached;
-
-  // 1) system resolver (respects /etc/resolv.conf, hosts file, etc.)
-  try {
-    const { address } = await dns.lookup(hostname, { family: 4 });
-    dnsCache.set(hostname, address);
-    return address;
-  } catch { /* fall through to public resolvers */ }
-
-  // 2) public fallback resolvers, tried in order until one answers
-  for (const servers of FALLBACK_DNS_SERVERS) {
-    try {
-      const resolver = new dns.Resolver({ timeout: 3000, tries: 1 });
+// Tries the system resolver + all fallback resolvers concurrently and takes
+// whichever answers first. Only fails if every single one fails — used both
+// for real resolution and for the cycle-level health probe below.
+async function resolveHostFresh(hostname, { timeoutMs = 3000 } = {}) {
+  const attempts = [
+    dns.lookup(hostname, { family: 4 }).then(r => r.address),
+    ...FALLBACK_DNS_SERVERS.map(async (servers) => {
+      const resolver = new dns.Resolver({ timeout: timeoutMs, tries: 1 });
       resolver.setServers(servers);
       const addrs = await resolver.resolve4(hostname);
-      if (addrs?.length) {
-        dnsCache.set(hostname, addrs[0]);
-        return addrs[0];
-      }
-    } catch { /* try next resolver */ }
+      if (!addrs?.length) throw new Error("empty_answer");
+      return addrs[0];
+    }),
+  ];
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    throw Object.assign(
+      new Error(`DNS resolution failed for ${hostname} (system + Cloudflare/Google/Quad9/OpenDNS)`),
+      { code: "ENOTFOUND" },
+    );
   }
+}
 
-  throw Object.assign(new Error(`DNS resolution failed for ${hostname} (system + Cloudflare/Google/Quad9/OpenDNS)`), { code: "ENOTFOUND" });
+async function resolveHost(hostname) {
+  if (net.isIP(hostname)) return hostname;
+  const cached = dnsCache.get(hostname);
+  if (cached) return cached;
+  const ip = await resolveHostFresh(hostname);
+  dnsCache.set(hostname, ip);
+  return ip;
+}
+
+// Cycle-level preflight: is DNS/network reachable at all right now? Bypasses
+// the cache on purpose (always tests live). Used to tell "this one target is
+// down" apart from "this box currently has no working DNS/network path" —
+// the latter must never be allowed to open incidents for everything at once.
+export async function checkDnsHealth(canaryHost = "cloudflare.com") {
+  try {
+    await resolveHostFresh(canaryHost, { timeoutMs: 2500 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const CLOUDFLARE_INDICATORS = [

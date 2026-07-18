@@ -16,7 +16,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { setTimeout as sleep } from "timers/promises";
-import { pingService, tcpPing, isDnsErrorResult } from "./checkers.js";
+import { pingService, tcpPing, isDnsErrorResult, checkDnsHealth } from "./checkers.js";
 import { info, success, error, warn } from "./console.js";
 
 /* ═══════════════════════════════════════════
@@ -570,6 +570,15 @@ async function runCheck(sections, forceAll = false) {
   let httpChecked = 0, networkErrors = 0;
   let dnsCheckedCount = 0, dnsErrorCount = 0;
 
+  // Cycle-level preflight: tests a well-known canary host once, up front.
+  // If even that can't resolve, this box currently has no working DNS/network
+  // path — treat every DNS-classified failure this cycle as suspect,
+  // regardless of check order, instead of only catching it after 2+ have failed.
+  const systemDnsSuspect = !(await checkDnsHealth());
+  if (systemDnsSuspect) {
+    warn("[Incidents] 🌐 DNS preflight failed (canary host unreachable via system + fallback resolvers) — suppressing new incidents for DNS-classified failures this cycle.");
+  }
+
   for (const service of SERVICES) {
     const intervalMs = (service.checkInterval ?? 60) * 1_000;
     const due        = nextCheckAt[service.id] ?? 0;
@@ -757,12 +766,14 @@ async function runCheck(sections, forceAll = false) {
       if (result.status === "down") {
         if (!hasOpenIncident) {
           const dnsIssue   = isDnsErrorResult(result);
-          const correlated = dnsIssue
-            && dnsCheckedCount >= CORRELATED_DNS_MIN_CHECKED
-            && (dnsErrorCount / dnsCheckedCount) >= CORRELATED_DNS_RATIO;
+          const correlated = dnsIssue && (
+            systemDnsSuspect ||
+            (dnsCheckedCount >= CORRELATED_DNS_MIN_CHECKED && (dnsErrorCount / dnsCheckedCount) >= CORRELATED_DNS_RATIO)
+          );
 
           if (correlated) {
-            warn(`[Incidents] 🌐 ${service.id} — Skipping incident: ${dnsErrorCount}/${dnsCheckedCount} services failing with DNS errors this cycle (likely local resolver/network issue, not a real outage). Re-evaluating next cycle.`);
+            const reason = systemDnsSuspect ? "DNS preflight failed this cycle" : `${dnsErrorCount}/${dnsCheckedCount} services failing with DNS errors this cycle`;
+            warn(`[Incidents] 🌐 ${service.id} — Skipping incident: ${reason} (likely local resolver/network issue, not a real outage). Re-evaluating next cycle.`);
             // Don't count this check against uptime — it's a suspected false alarm.
             const last = svc.currentHour.checks[svc.currentHour.checks.length - 1];
             if (last && last.status === "down") last.status = "up";
