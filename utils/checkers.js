@@ -146,7 +146,7 @@ async function httpRequestDirect(urlStr, { method, headers, timeoutMs, redirects
       method,
       headers,
       timeout: timeoutMs,
-      lookup: (_hostname, _opts, cb) => cb(null, ip, 4),
+      lookup: (_hostname, _opts, cb) => cb(null, [{ address: ip, family: net.isIP(ip) }]),
     }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         res.resume(); // discard body, follow redirect
