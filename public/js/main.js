@@ -7,6 +7,7 @@ const API_URL = "/uptime";
    SPA ROUTER
 ═══════════════════════════════════════════ */
 function navigateToService(svcId) {
+  closeIncidentModal();
   if (!_allStatusData) return;
   const svc = _allStatusData.services?.[svcId];
   if (!svc) return;
@@ -52,6 +53,7 @@ function navigateGlobalUptime() {
 }
 
 function navigateHome() {
+  closeIncidentModal();
   const viewHome    = document.getElementById("view-home");
   const viewService = document.getElementById("view-service");
   const viewGlobal  = document.getElementById("view-global-uptime");
@@ -260,10 +262,18 @@ async function loadStatus() {
       }
     }
 
-    /* ── Si la vista de uptime global está abierta, refrescarla ── */
+    /* ── Si la vista de uptime global está abierta, refrescarla conservando estado ── */
     const viewGlobal = document.getElementById("view-global-uptime");
     if (viewGlobal && !viewGlobal.hidden) {
-      renderGlobalUptime(viewGlobal, data);
+      const activeTab = viewGlobal.querySelector(".period-tab.active");
+      const activeYear = viewGlobal.querySelector(".global-calendar-year");
+      const activeMonth = viewGlobal.querySelector(".global-calendar-select");
+      const state = {
+        period: activeTab?.dataset.period || null,
+        year: activeYear ? Number(activeYear.textContent) : null,
+        month: activeMonth ? Number(activeMonth.value) : null,
+      };
+      renderGlobalUptime(viewGlobal, data, state);
     }
 
   } catch (err) {

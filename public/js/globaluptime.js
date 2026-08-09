@@ -22,11 +22,31 @@ function periodTitle(period, texts) {
   return map[period] || period;
 }
 
+function isoWeekFromLocalDate(localDate) {
+  const tmp = new Date(localDate.getTime());
+  tmp.setHours(0, 0, 0, 0);
+  const day = (tmp.getDay() + 6) % 7; // lunes=0
+  tmp.setDate(tmp.getDate() - day + 3); // jueves de la semana
+  const firstThursday = new Date(Date.UTC(tmp.getFullYear(), 0, 4));
+  firstThursday.setUTCHours(0, 0, 0, 0);
+  const firstDay = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDay + 3);
+  const weekNum = 1 + Math.floor((tmp - firstThursday) / (7 * 24 * 3600_000));
+  return { year: tmp.getFullYear(), week: weekNum };
+}
+
+function getLocalThursdayOfIsoWeek(year, week) {
+  const jan4 = new Date(year, 0, 4, 0, 0, 0, 0);
+  const jan4Day = (jan4.getDay() + 6) % 7;
+  const week1Monday = new Date(jan4.getTime() - jan4Day * 24 * 3600_000);
+  const monday = new Date(week1Monday.getTime() + (week - 1) * 7 * 24 * 3600_000);
+  return new Date(monday.getTime() + 3 * 24 * 3600_000);
+}
+
 function filterIncidentsForPeriod(incidents, period, key) {
   if (!Array.isArray(incidents)) return [];
   return incidents.filter(inc => {
     const created = new Date(inc.createdAt);
-    // Usar hora local del servidor (UTC-6)
     const local = new Date(created.getTime() + created.getTimezoneOffset() * 60_000 + dataTimezone * 3_600_000);
     const y = local.getFullYear();
     const m = local.getMonth() + 1;
@@ -36,21 +56,11 @@ function filterIncidentsForPeriod(incidents, period, key) {
       return dateKey === key;
     }
     if (period === "weekly") {
-      // key = "YYYY-WNN"
       const [ky, kw] = key.split("-W").map(Number);
-      const tmp = new Date(created.getTime() + created.getTimezoneOffset() * 60_000 + dataTimezone * 3_600_000);
-      tmp.setHours(0, 0, 0, 0);
-      const day = (tmp.getDay() + 6) % 7;
-      tmp.setDate(tmp.getDate() - day + 3);
-      const firstThursday = new Date(Date.UTC(tmp.getFullYear(), 0, 4));
-      firstThursday.setUTCHours(0, 0, 0, 0);
-      const firstDay = (firstThursday.getUTCDay() + 6) % 7;
-      firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDay + 3);
-      const weekNum = 1 + Math.floor((tmp - firstThursday) / (7 * 24 * 3600_000));
-      return tmp.getFullYear() === ky && weekNum === kw;
+      const { year, week } = isoWeekFromLocalDate(local);
+      return year === ky && week === kw;
     }
     if (period === "monthly") {
-      // key = "YYYY-MM"
       const [ky, km] = key.split("-").map(Number);
       return y === ky && m === km;
     }
@@ -58,7 +68,85 @@ function filterIncidentsForPeriod(incidents, period, key) {
   });
 }
 
-function renderGlobalUptime(container, data) {
+function openIncidentModal(periodKey, incidents, period, texts) {
+  closeIncidentModal();
+  const list = filterIncidentsForPeriod(incidents, period, periodKey);
+
+  const overlay = document.createElement("div");
+  overlay.className = "global-uptime-modal-overlay";
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeIncidentModal();
+  });
+
+  const modal = document.createElement("div");
+  modal.className = "global-uptime-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const header = document.createElement("div");
+  header.className = "global-uptime-modal-header";
+
+  const title = document.createElement("div");
+  title.className = "global-uptime-modal-title";
+  title.textContent = `${texts["global-uptime-incidents"] || "Incidentes"} · ${periodKey}`;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "global-uptime-modal-close";
+  closeBtn.setAttribute("aria-label", texts["global-uptime-back"] || "Cerrar");
+  closeBtn.innerHTML = "<i class=\"fa-solid fa-xmark\" aria-hidden=\"true\"></i>";
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeIncidentModal();
+  });
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "global-uptime-modal-body";
+
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "global-uptime-modal-empty";
+    empty.textContent = "Sin incidentes para este período";
+    body.appendChild(empty);
+  } else {
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    list.forEach(inc => body.appendChild(renderIncidentCard(inc, false)));
+  }
+
+  modal.appendChild(body);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Forzar reflow y activar transición de entrada
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => overlay.classList.add("visible"));
+  });
+
+  const onKey = (e) => { if (e.key === "Escape") closeIncidentModal(); };
+  document.addEventListener("keydown", onKey);
+  overlay._keydownHandler = onKey;
+
+  document.body.style.overflow = "hidden";
+}
+
+function closeIncidentModal() {
+  const overlay = document.querySelector(".global-uptime-modal-overlay");
+  if (!overlay) return;
+  if (overlay.classList.contains("closing")) return;
+  document.removeEventListener("keydown", overlay._keydownHandler);
+  overlay.classList.remove("visible");
+  overlay.classList.add("closing");
+  setTimeout(() => {
+    overlay.remove();
+    document.body.style.overflow = "";
+  }, 220);
+}
+
+function renderGlobalUptime(container, data, initialState) {
   const texts = window.__STATUS_TEXTS__ || {};
   const ap = window.__APPEARANCE__ || {};
   const globalUptime = data?.globalUptime || { daily: [], weekly: [], monthly: [], yearly: [] };
@@ -103,41 +191,23 @@ function renderGlobalUptime(container, data) {
   const calendarWrap = document.createElement("div");
   calendarWrap.className = "global-uptime-calendar-wrap";
 
-  const incidentsWrap = document.createElement("div");
-  incidentsWrap.className = "global-uptime-incidents";
-  incidentsWrap.hidden = true;
-
-  let activePeriod = "daily";
-  let selectedKey = null;
+  let activePeriod = initialState?.period || "daily";
+  if (!PERIODS.includes(activePeriod)) activePeriod = "daily";
+  let selectedYear = initialState?.year ?? getServerNow().getFullYear();
 
   function showIncidentsFor(key) {
-    selectedKey = key;
-    const list = filterIncidentsForPeriod(incidents, activePeriod, key);
-    incidentsWrap.innerHTML = "";
-    if (list.length === 0) {
-      incidentsWrap.hidden = true;
-      return;
-    }
-    incidentsWrap.hidden = false;
-    const title = document.createElement("div");
-    title.className = "global-uptime-incidents-title";
-    title.textContent = `${texts["global-uptime-incidents"] || "Incidentes"} · ${key}`;
-    incidentsWrap.appendChild(title);
-    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    list.forEach(inc => incidentsWrap.appendChild(renderIncidentCard(inc, false)));
+    openIncidentModal(key, incidents, activePeriod, texts);
   }
 
   function renderCalendar() {
     calendarWrap.innerHTML = "";
-    incidentsWrap.hidden = true;
-    selectedKey = null;
 
     if (activePeriod === "daily") {
-      renderDailyCalendar(calendarWrap, globalUptime.daily || [], showIncidentsFor);
+      renderDailyCalendar(calendarWrap, globalUptime.daily || [], showIncidentsFor, selectedYear, initialState?.month);
     } else if (activePeriod === "weekly") {
-      renderWeeklyCalendar(calendarWrap, globalUptime.weekly || [], showIncidentsFor, texts, ap);
+      renderWeeklyCalendar(calendarWrap, globalUptime.weekly || [], showIncidentsFor, selectedYear, texts, ap);
     } else {
-      renderMonthlyCalendar(calendarWrap, globalUptime.monthly || [], showIncidentsFor, texts, ap);
+      renderMonthlyCalendar(calendarWrap, globalUptime.monthly || [], globalUptime.daily || [], showIncidentsFor, selectedYear, texts, ap);
     }
   }
 
@@ -146,6 +216,7 @@ function renderGlobalUptime(container, data) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `period-tab ${period === activePeriod ? "active" : ""}`;
+    btn.dataset.period = period;
     btn.textContent = periodTitle(period, texts);
     btn.addEventListener("click", () => {
       activePeriod = period;
@@ -158,7 +229,6 @@ function renderGlobalUptime(container, data) {
 
   container.appendChild(tabsWrap);
   container.appendChild(calendarWrap);
-  container.appendChild(incidentsWrap);
 
   renderCalendar();
 
@@ -169,21 +239,90 @@ function renderGlobalUptime(container, data) {
   container.appendChild(footer);
 }
 
-/* ── DÍA: calendario del mes actual (L-D) ── */
-function renderDailyCalendar(container, dailyEntries, onSelect) {
+/* ── DÍA: calendario mensual con selector de año/mes ── */
+function renderDailyCalendar(container, dailyEntries, onSelect, selectedYear, initialMonth) {
+  const locale = "es-ES";
   const serverNow = getServerNow();
-  const year = serverNow.getFullYear();
-  const month = serverNow.getMonth();
+  const currentYear = serverNow.getFullYear();
+  const currentMonth = serverNow.getMonth();
+  const currentDay = serverNow.getDate();
 
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const startWd = (firstDay.getDay() + 6) % 7; // lunes=0
-  const daysInMonth = lastDay.getDate();
+  // Determinar mes a mostrar: preferir estado previo, luego el mes actual si es el año actual, sino enero
+  let viewYear = selectedYear;
+  let viewMonth = initialMonth != null
+    ? initialMonth
+    : (selectedYear === currentYear ? currentMonth : 0);
 
   const entriesByDate = {};
   for (const e of dailyEntries) { if (e?.date) entriesByDate[e.date] = e; }
 
-  const todayKey = `${year}-${pad(month + 1)}-${pad(serverNow.getDate())}`;
+  const wrap = document.createElement("div");
+
+  // Selector de año/mes
+  const controls = document.createElement("div");
+  controls.className = "global-calendar-controls";
+
+  const monthSelect = document.createElement("select");
+  monthSelect.className = "global-calendar-select";
+  for (let m = 0; m < 12; m++) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = new Date(viewYear, m, 1).toLocaleDateString(locale, { month: "long" });
+    if (m === viewMonth) opt.selected = true;
+    monthSelect.appendChild(opt);
+  }
+  monthSelect.addEventListener("change", () => {
+    viewMonth = Number(monthSelect.value);
+    rerender();
+  });
+
+  const prevYear = document.createElement("button");
+  prevYear.type = "button";
+  prevYear.className = "global-calendar-arrow";
+  prevYear.innerHTML = "<i class=\"fa-solid fa-chevron-left\" aria-hidden=\"true\"></i>";
+  prevYear.addEventListener("click", () => { viewYear--; rerender(); });
+
+  const yearLabel = document.createElement("div");
+  yearLabel.className = "global-calendar-year";
+  yearLabel.textContent = viewYear;
+
+  const nextYear = document.createElement("button");
+  nextYear.type = "button";
+  nextYear.className = "global-calendar-arrow";
+  nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
+  nextYear.addEventListener("click", () => { viewYear++; rerender(); });
+
+  controls.appendChild(prevYear);
+  controls.appendChild(yearLabel);
+  controls.appendChild(nextYear);
+  controls.appendChild(monthSelect);
+  wrap.appendChild(controls);
+
+  const calendarBody = document.createElement("div");
+  wrap.appendChild(calendarBody);
+  container.appendChild(wrap);
+
+  function rerender() {
+    calendarBody.innerHTML = "";
+    renderDailyMonth(calendarBody, viewYear, viewMonth, entriesByDate, onSelect, currentYear, currentMonth, currentDay);
+    yearLabel.textContent = viewYear;
+    monthSelect.value = viewMonth;
+  }
+  rerender();
+}
+
+function renderDailyMonth(container, year, month, entriesByDate, onSelect, currentYear, currentMonth, currentDay) {
+  const locale = "es-ES";
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startWd = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = lastDay.getDate();
+  const todayKey = `${currentYear}-${pad(currentMonth + 1)}-${pad(currentDay)}`;
+
+  const title = document.createElement("div");
+  title.className = "global-calendar-month-title";
+  title.textContent = firstDay.toLocaleDateString(locale, { month: "long", year: "numeric" });
+  container.appendChild(title);
 
   const header = document.createElement("div");
   header.className = "cal-header";
@@ -195,15 +334,9 @@ function renderDailyCalendar(container, dailyEntries, onSelect) {
   });
   container.appendChild(header);
 
-  const title = document.createElement("div");
-  title.className = "global-calendar-month-title";
-  title.textContent = firstDay.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
-  container.appendChild(title);
-
   const grid = document.createElement("div");
   grid.className = "cal-grid";
 
-  // Celdas vacías antes del día 1
   for (let i = 0; i < startWd; i++) {
     const cell = document.createElement("div");
     cell.className = "cal-cell empty";
@@ -253,104 +386,274 @@ function renderDailyCalendar(container, dailyEntries, onSelect) {
   renderLegend(container, "global");
 }
 
-/* ── SEMANA: grid vertical de semanas ISO ── */
-function renderWeeklyCalendar(container, weeklyEntries, onSelect, texts, ap) {
-  const locale = ap?.language === "en" ? "en-US" : "es-ES";
-  const serverNow = getServerNow();
-  const currentYear = serverNow.getFullYear();
-  const tmp = new Date(serverNow);
-  tmp.setHours(0, 0, 0, 0);
-  const day = (tmp.getDay() + 6) % 7;
-  tmp.setDate(tmp.getDate() - day + 3);
-  const firstThursday = new Date(Date.UTC(tmp.getFullYear(), 0, 4));
-  firstThursday.setUTCHours(0, 0, 0, 0);
-  const firstDay = (firstThursday.getUTCDay() + 6) % 7;
-  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDay + 3);
-  const currentWeek = 1 + Math.floor((tmp - firstThursday) / (7 * 24 * 3600_000));
-
-  if (weeklyEntries.length === 0) {
-    container.appendChild(el("div", texts?.["global-uptime-no-data"] || "Sin datos disponibles", "svc-no-data"));
-    return;
-  }
-
-  const title = document.createElement("div");
-  title.className = "global-calendar-month-title";
-  title.textContent = texts?.["global-uptime-period-week"] || "Semanas";
-  container.appendChild(title);
-
-  const grid = document.createElement("div");
-  grid.className = "global-uptime-week-grid";
-
-  const reversed = [...weeklyEntries].reverse();
-  for (const entry of reversed) {
-    const key = `${entry.year}-W${String(entry.week).padStart(2, "0")}`;
-    const isCurrent = entry.year === currentYear && entry.week === currentWeek;
-
-    const cell = document.createElement("div");
-    cell.className = `global-uptime-period-cell ${getUptimeClassGlobal(entry.onlineper)} ${isCurrent ? "current" : ""}`;
-
-    const label = document.createElement("div");
-    label.className = "period-cell-label";
-    label.textContent = key;
-
-    const value = document.createElement("div");
-    value.className = "period-cell-value";
-    value.textContent = formatPercent(entry.onlineper);
-
-    cell.appendChild(label);
-    cell.appendChild(value);
-    cell.addEventListener("click", () => onSelect(key));
-    grid.appendChild(cell);
-  }
-  container.appendChild(grid);
-  renderLegend(container, "global");
-}
-
-/* ── MES: grid de meses ── */
-function renderMonthlyCalendar(container, monthlyEntries, onSelect, texts, ap) {
+/* ── SEMANA: grid de semanas del año agrupadas por mes ── */
+function renderWeeklyCalendar(container, weeklyEntries, onSelect, selectedYear, texts, ap) {
   const locale = ap?.language === "en" ? "en-US" : "es-ES";
   const serverNow = getServerNow();
   const currentYear = serverNow.getFullYear();
   const currentMonth = serverNow.getMonth() + 1;
+  const currentWeek = isoWeekFromLocalDate(serverNow).week;
 
-  if (monthlyEntries.length === 0) {
-    container.appendChild(el("div", texts?.["global-uptime-no-data"] || "Sin datos disponibles", "svc-no-data"));
-    return;
+  let viewYear = selectedYear;
+
+  const entriesByKey = {};
+  for (const e of weeklyEntries) {
+    if (e?.year != null && e?.week != null) {
+      entriesByKey[`${e.year}-W${String(e.week).padStart(2, "0")}`] = e;
+    }
   }
 
+  const wrap = document.createElement("div");
+
+  const controls = document.createElement("div");
+  controls.className = "global-calendar-controls";
+
+  const prevYear = document.createElement("button");
+  prevYear.type = "button";
+  prevYear.className = "global-calendar-arrow";
+  prevYear.innerHTML = "<i class=\"fa-solid fa-chevron-left\" aria-hidden=\"true\"></i>";
+  prevYear.addEventListener("click", () => { viewYear--; rerender(); });
+
+  const yearLabel = document.createElement("div");
+  yearLabel.className = "global-calendar-year";
+  yearLabel.textContent = viewYear;
+
+  const nextYear = document.createElement("button");
+  nextYear.type = "button";
+  nextYear.className = "global-calendar-arrow";
+  nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
+  nextYear.addEventListener("click", () => { viewYear++; rerender(); });
+
+  controls.appendChild(prevYear);
+  controls.appendChild(yearLabel);
+  controls.appendChild(nextYear);
+  wrap.appendChild(controls);
+
+  const calendarBody = document.createElement("div");
+  wrap.appendChild(calendarBody);
+  container.appendChild(wrap);
+
+  function rerender() {
+    calendarBody.innerHTML = "";
+    renderYearWeekGrid(calendarBody, viewYear, entriesByKey, onSelect, currentYear, currentMonth, currentWeek, locale);
+    yearLabel.textContent = viewYear;
+  }
+  rerender();
+}
+
+function renderYearWeekGrid(container, year, entriesByKey, onSelect, currentYear, currentMonth, currentWeek, locale) {
   const title = document.createElement("div");
   title.className = "global-calendar-month-title";
-  title.textContent = texts?.["global-uptime-period-month"] || "Meses";
+  title.textContent = year;
   container.appendChild(title);
 
-  const grid = document.createElement("div");
-  grid.className = "global-uptime-month-grid";
+  // Agrupar semanas por mes según el jueves de cada semana ISO
+  const weeksByMonth = new Map();
+  for (let wk = 1; wk <= 53; wk++) {
+    const key = `${year}-W${String(wk).padStart(2, "0")}`;
+    const thursday = getLocalThursdayOfIsoWeek(year, wk);
+    const month = thursday.getMonth() + 1;
+    if (!weeksByMonth.has(month)) weeksByMonth.set(month, []);
+    weeksByMonth.get(month).push({ key, week: wk, thursday });
+  }
 
-  const reversed = [...monthlyEntries].reverse();
-  for (const entry of reversed) {
-    const key = `${entry.year}-${String(entry.month).padStart(2, "0")}`;
-    const isCurrent = entry.year === currentYear && entry.month === currentMonth;
+  const monthsWrap = document.createElement("div");
+  monthsWrap.className = "global-uptime-weeks-by-month";
 
-    const cell = document.createElement("div");
-    cell.className = `global-uptime-period-cell ${getUptimeClassGlobal(entry.onlineper)} ${isCurrent ? "current" : ""}`;
+  for (let m = 1; m <= 12; m++) {
+    const monthName = new Date(year, m - 1, 1).toLocaleDateString(locale, { month: "long" });
+    const weeks = weeksByMonth.get(m) || [];
 
-    const label = document.createElement("div");
-    label.className = "period-cell-label";
-    try {
-      label.textContent = new Date(entry.year, entry.month - 1, 1).toLocaleDateString(locale, { month: "long", year: "numeric" });
-    } catch {
-      label.textContent = key;
+    const monthSection = document.createElement("div");
+    monthSection.className = "global-uptime-week-month";
+
+    const monthTitle = document.createElement("div");
+    monthTitle.className = "global-uptime-week-month-title";
+    monthTitle.textContent = monthName;
+    monthSection.appendChild(monthTitle);
+
+    const weeksRow = document.createElement("div");
+    weeksRow.className = "global-uptime-weeks-row";
+
+    if (weeks.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "global-uptime-week-empty";
+      empty.textContent = "—";
+      weeksRow.appendChild(empty);
+    } else {
+      for (const { key, week, thursday } of weeks) {
+        const entry = entriesByKey[key];
+        const isCurrent = year === currentYear && week === currentWeek && m === currentMonth;
+        const cell = document.createElement("div");
+        cell.className = `global-uptime-week-cell ${entry ? getUptimeClassGlobal(entry.onlineper) : "nm"} ${isCurrent ? "current" : ""}`;
+
+        const label = document.createElement("div");
+        label.className = "global-uptime-week-label";
+        label.textContent = `W${String(week).padStart(2, "0")}`;
+
+        const value = document.createElement("div");
+        value.className = "global-uptime-week-value";
+        value.textContent = entry ? formatPercent(entry.onlineper) : "—";
+
+        cell.appendChild(label);
+        cell.appendChild(value);
+        if (entry) {
+          cell.addEventListener("click", () => onSelect(key));
+        }
+        weeksRow.appendChild(cell);
+      }
     }
 
-    const value = document.createElement("div");
-    value.className = "period-cell-value";
-    value.textContent = formatPercent(entry.onlineper);
-
-    cell.appendChild(label);
-    cell.appendChild(value);
-    cell.addEventListener("click", () => onSelect(key));
-    grid.appendChild(cell);
+    monthSection.appendChild(weeksRow);
+    monthsWrap.appendChild(monthSection);
   }
+
+  container.appendChild(monthsWrap);
+  renderLegend(container, "global");
+}
+
+/* ── MES: 12 calendarios mensuales del año ── */
+function renderMonthlyCalendar(container, monthlyEntries, dailyEntries, onSelect, selectedYear, texts, ap) {
+  const locale = ap?.language === "en" ? "en-US" : "es-ES";
+  const serverNow = getServerNow();
+  let viewYear = selectedYear;
+  const currentYear = serverNow.getFullYear();
+  const currentMonth = serverNow.getMonth() + 1;
+  const currentDay = serverNow.getDate();
+
+  // El resumen mensual no se usa para pintar; usamos los datos diarios para colorear cada día.
+
+  const wrap = document.createElement("div");
+
+  const controls = document.createElement("div");
+  controls.className = "global-calendar-controls";
+
+  const prevYear = document.createElement("button");
+  prevYear.type = "button";
+  prevYear.className = "global-calendar-arrow";
+  prevYear.innerHTML = "<i class=\"fa-solid fa-chevron-left\" aria-hidden=\"true\"></i>";
+  prevYear.addEventListener("click", () => { viewYear--; rerender(); });
+
+  const yearLabel = document.createElement("div");
+  yearLabel.className = "global-calendar-year";
+  yearLabel.textContent = viewYear;
+
+  const nextYear = document.createElement("button");
+  nextYear.type = "button";
+  nextYear.className = "global-calendar-arrow";
+  nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
+  nextYear.addEventListener("click", () => { viewYear++; rerender(); });
+
+  controls.appendChild(prevYear);
+  controls.appendChild(yearLabel);
+  controls.appendChild(nextYear);
+  wrap.appendChild(controls);
+
+  const calendarBody = document.createElement("div");
+  wrap.appendChild(calendarBody);
+  container.appendChild(wrap);
+
+  function rerender() {
+    calendarBody.innerHTML = "";
+    renderYearMonthsAsCalendars(calendarBody, viewYear, dailyEntries, onSelect, currentYear, currentMonth, currentDay, locale);
+    yearLabel.textContent = viewYear;
+  }
+  rerender();
+}
+
+function renderYearMonthsAsCalendars(container, year, dailyEntries, onSelect, currentYear, currentMonth, currentDay, locale) {
+  const title = document.createElement("div");
+  title.className = "global-calendar-month-title";
+  title.textContent = year;
+  container.appendChild(title);
+
+  const entriesByDate = {};
+  for (const e of dailyEntries) {
+    if (e?.date) entriesByDate[e.date] = e;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "global-year-months-calendar-grid";
+
+  for (let m = 1; m <= 12; m++) {
+    const monthKey = `${year}-${String(m).padStart(2, "0")}`;
+    const isCurrent = year === currentYear && m === currentMonth;
+
+    const monthWrap = document.createElement("div");
+    monthWrap.className = "global-year-month-calendar";
+
+    const monthTitle = document.createElement("div");
+    monthTitle.className = "global-year-month-calendar-title";
+    monthTitle.textContent = new Date(year, m - 1, 1).toLocaleDateString(locale, { month: "long" });
+    monthWrap.appendChild(monthTitle);
+
+    const firstDay = new Date(year, m - 1, 1);
+    const startWd = (firstDay.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, m, 0).getDate();
+
+    const header = document.createElement("div");
+    header.className = "cal-header small";
+    ["L", "M", "X", "J", "V", "S", "D"].forEach(d => {
+      const cell = document.createElement("div");
+      cell.className = "cal-day-label";
+      cell.textContent = d;
+      header.appendChild(cell);
+    });
+    monthWrap.appendChild(header);
+
+    const daysGrid = document.createElement("div");
+    daysGrid.className = "cal-grid small";
+
+    for (let i = 0; i < startWd; i++) {
+      const cell = document.createElement("div");
+      cell.className = "cal-cell empty";
+      daysGrid.appendChild(cell);
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateKey = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const isToday = year === currentYear && m === currentMonth && d === currentDay;
+      const entry = entriesByDate[dateKey];
+      const cell = document.createElement("div");
+      cell.className = "cal-cell";
+
+      const dayNum = document.createElement("span");
+      dayNum.className = "cal-day-num";
+      dayNum.textContent = d;
+      cell.appendChild(dayNum);
+
+      if (entry && typeof entry.onlineper === "number") {
+        let v = entry.onlineper;
+        if (v >= 0 && v <= 1) v *= 100;
+        const cls = getUptimeClassGlobal(v);
+        cell.classList.add(cls);
+        const pctStr = truncate3(v).toFixed(3) + "%";
+        cell.dataset.time = dateKey;
+        cell.dataset.percent = pctStr;
+        cell.dataset.monitored = "true";
+        cell.dataset.isToday = isToday ? "true" : "false";
+        cell.setAttribute("aria-label", `${dateKey}: ${pctStr} uptime`);
+        cell.addEventListener("click", () => onSelect(monthKey));
+      } else {
+        cell.classList.add("nm");
+        cell.dataset.time = dateKey;
+        cell.dataset.monitored = "false";
+        cell.dataset.isToday = isToday ? "true" : "false";
+        cell.setAttribute("aria-label", `${dateKey}: sin datos`);
+      }
+
+      if (isToday) cell.classList.add("today");
+
+      cell.addEventListener("mouseenter", e => showTooltip(e, cell));
+      cell.addEventListener("mousemove", moveTooltip);
+      cell.addEventListener("mouseleave", hideTooltip);
+      daysGrid.appendChild(cell);
+    }
+
+    monthWrap.appendChild(daysGrid);
+    grid.appendChild(monthWrap);
+  }
+
   container.appendChild(grid);
   renderLegend(container, "global");
 }

@@ -27,6 +27,10 @@
 
 * { box-sizing: border-box; }
 
+html, body { overflow-x: hidden; }
+
+::-webkit-scrollbar { width: 0; height: 0; }
+
 body {
   margin: 0;
   font-family: var(--font-family);
@@ -1063,6 +1067,53 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   padding: 20px;
 }
 
+.global-calendar-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.global-calendar-arrow {
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: #e2e8f0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .2s, border-color .2s;
+}
+
+.global-calendar-arrow:hover {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+.global-calendar-year {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  min-width: 64px;
+  text-align: center;
+}
+
+.global-calendar-select {
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
 .global-calendar-month-title {
   font-size: 16px;
   font-weight: 700;
@@ -1071,75 +1122,259 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   text-transform: capitalize;
 }
 
-/* Celdas de semana/mes */
-.global-uptime-week-grid,
-.global-uptime-month-grid {
+/* Semanas agrupadas por mes */
+.global-uptime-weeks-by-month {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
 }
 
-.global-uptime-period-cell {
-  background: rgba(255, 255, 255, .06);
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 10px;
+.global-uptime-week-month {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
   padding: 14px;
-  cursor: pointer;
-  transition: transform .12s, border-color .12s;
+}
+
+.global-uptime-week-month-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 10px;
+  text-transform: capitalize;
+}
+
+.global-uptime-weeks-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+}
+
+.global-uptime-week-empty {
+  color: rgb(var(--muted));
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.global-uptime-week-cell {
+  aspect-ratio: 1;
+  border-radius: 5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: transform .12s ease, filter .12s;
+  background: rgba(255, 255, 255, .06);
+  min-height: 64px;
 }
 
-.global-uptime-period-cell:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, .2);
+.global-uptime-week-cell:hover:not(.nm) {
+  transform: scale(1.12);
+  filter: brightness(1.15);
 }
 
-.global-uptime-period-cell.excellent { background: rgba(var(--success), .14); border-color: rgba(var(--success), .25); }
-.global-uptime-period-cell.good      { background: rgba(134, 239, 172, .12); border-color: rgba(134, 239, 172, .22); }
-.global-uptime-period-cell.poor      { background: rgba(var(--danger), .14); border-color: rgba(var(--danger), .25); }
-.global-uptime-period-cell.nm        { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .08); cursor: default; }
-.global-uptime-period-cell.nm:hover  { transform: none; }
+.global-uptime-week-cell.nm { background: rgba(255, 255, 255, .07); cursor: default; }
+.global-uptime-week-cell.excellent { background: rgba(34, 197, 94, .65); }
+.global-uptime-week-cell.good      { background: rgba(134, 239, 172, .5); }
+.global-uptime-week-cell.poor      { background: rgba(239, 68, 68, .55); }
 
-.global-uptime-period-cell.current {
+.global-uptime-week-cell.current {
   outline: 2px solid rgba(var(--accent), .9);
   outline-offset: 1px;
 }
 
-.period-cell-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgb(var(--muted));
+.global-uptime-week-cell.nm .global-uptime-week-label,
+.global-uptime-week-cell.nm .global-uptime-week-value { color: rgba(255, 255, 255, .25); }
+
+.global-uptime-week-cell.excellent .global-uptime-week-label,
+.global-uptime-week-cell.excellent .global-uptime-week-value { color: rgba(255, 255, 255, .92); }
+
+.global-uptime-week-cell.good .global-uptime-week-label,
+.global-uptime-week-cell.good .global-uptime-week-value { color: rgba(255, 255, 255, .9); }
+
+.global-uptime-week-cell.poor .global-uptime-week-label,
+.global-uptime-week-cell.poor .global-uptime-week-value { color: rgba(255, 255, 255, .9); }
+
+.global-uptime-week-label {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
-.period-cell-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: #fff;
+.global-uptime-week-value {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-/* Incidentes debajo del calendario */
-.global-uptime-incidents {
+/* 12 mini calendarios mensuales */
+.global-year-months-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.global-year-month-calendar {
   background: rgba(255, 255, 255, .04);
   border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: var(--radius);
-  padding: 20px;
+  border-radius: 12px;
+  padding: 12px;
 }
 
-.global-uptime-incidents-title {
+.global-year-month-calendar-title {
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
+  text-transform: capitalize;
+}
+
+.cal-header.small {
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.cal-header.small .cal-day-label {
+  font-size: 8px;
+  padding: 1px 0;
+}
+
+.cal-grid.small {
+  gap: 2px;
+}
+
+.cal-grid.small .cal-cell {
+  border-radius: 3px;
+  min-height: 22px;
+}
+
+.cal-grid.small .cal-day-num {
+  font-size: 8px;
+}
+
+/* Modal de incidentes */
+.global-uptime-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(2, 6, 23, 0);
+  backdrop-filter: blur(0);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  opacity: 0;
+  transition: opacity .2s ease, background .2s ease, backdrop-filter .2s ease;
+}
+
+.global-uptime-modal-overlay.visible {
+  opacity: 1;
+  background: rgba(2, 6, 23, .75);
+  backdrop-filter: blur(6px);
+}
+
+.global-uptime-modal-overlay.closing {
+  opacity: 0;
+  background: rgba(2, 6, 23, 0);
+  backdrop-filter: blur(0);
+}
+
+.global-uptime-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 80vh;
+  background: rgba(7, 10, 20, .96);
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: scale(.96) translateY(10px);
+  opacity: 0;
+  transition: transform .2s ease, opacity .2s ease;
+}
+
+.global-uptime-modal-overlay.visible .global-uptime-modal {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+
+.global-uptime-modal-overlay.closing .global-uptime-modal {
+  transform: scale(.96) translateY(10px);
+  opacity: 0;
+}
+
+.global-uptime-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+
+.global-uptime-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.global-uptime-modal-close {
+  background: none;
+  border: none;
+  color: rgb(var(--muted));
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color .2s, background .2s;
+  flex-shrink: 0;
+}
+
+.global-uptime-modal-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .1);
+}
+
+.global-uptime-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.global-uptime-modal-body .incident-card { margin-bottom: 0; }
+
+.global-uptime-modal-empty {
+  text-align: center;
+  color: rgb(var(--muted));
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+@media (max-width: 900px) {
+  .global-year-months-calendar-grid { grid-template-columns: repeat(2, 1fr); }
+  .global-uptime-weeks-by-month { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
   .global-uptime-title { font-size: 20px; }
   .period-tab { padding: 7px 12px; font-size: 12px; }
   .global-uptime-calendar-wrap { padding: 14px; }
-  .global-uptime-week-grid,
-  .global-uptime-month-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-  .global-uptime-period-cell { padding: 12px; }
-  .period-cell-value { font-size: 18px; }
+  .global-uptime-weeks-row { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; }
+  .global-uptime-week-cell { min-height: 52px; }
+  .global-uptime-week-value { font-size: 11px; }
+}
+
+@media (max-width: 400px) {
+  .global-year-months-calendar-grid { grid-template-columns: 1fr; }
+  .cal-grid.small .cal-cell { min-height: 28px; }
+  .cal-grid.small .cal-day-num { font-size: 9px; }
 }
