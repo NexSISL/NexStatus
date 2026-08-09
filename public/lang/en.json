@@ -25,5 +25,15 @@
   "service-detail-legend-excellent": "≥ 95%",
   "service-detail-legend-good": "89–95%",
   "service-detail-legend-poor": "< 89%",
-  "service-detail-legend-nodata": "No data"
+  "service-detail-legend-nodata": "No data",
+  "global-uptime-history-link": "View global uptime history",
+  "global-uptime-title": "Global availability",
+  "global-uptime-period-day": "Day",
+  "global-uptime-period-week": "Week",
+  "global-uptime-period-month": "Month",
+  "global-uptime-period-year": "Year",
+  "global-uptime-back": "Back",
+  "global-uptime-no-data": "No data available",
+  "global-uptime-date": "Period",
+  "global-uptime-availability": "Availability"
 }

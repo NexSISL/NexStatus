@@ -82,6 +82,9 @@ __LOGO_BLOCK__
         <div class="uptime" aria-label="Total availability">
           <div data-text-key="total-uptime-label">Disponibilidad total</div>
           <strong id="uptime-percent" aria-live="polite">–</strong>
+          <button id="btn-global-uptime" class="uptime-history-link" type="button">
+            <span data-text-key="global-uptime-history-link">Ver histórico global</span>
+          </button>
         </div>
       </section>
 
@@ -115,6 +118,12 @@ __LOGO_BLOCK__
       <!-- Dynamically rendered by servicedetail.js -->
     </div>
 
+    <!-- ══ GLOBAL UPTIME HISTORY VIEW (SPA) ══ -->
+    <div id="view-global-uptime" class="spa-view" hidden
+         role="main" aria-label="Global uptime history">
+      <!-- Dynamically rendered by globaluptime.js -->
+    </div>
+
   </main>
 
   <!-- JS modules (dependency order) -->
@@ -127,6 +136,7 @@ __LOGO_BLOCK__
   <script src="js/sparkline.js" defer></script>
   <script src="js/cards.js" defer></script>
   <script src="js/servicedetail.js" defer></script>
+  <script src="js/globaluptime.js" defer></script>
   <script src="js/main.js" defer></script>
 </body>
 

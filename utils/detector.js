@@ -474,6 +474,32 @@ function getTodayKey() {
 function getDateFromHourKey(hourKey) { return hourKey.split("T")[0]; }
 function pad(n) { return String(n).padStart(2, "0"); }
 
+/* Helpers ISO para agrupar el uptime global (siempre UTC-6) */
+function dateFromLocalParts(y, m, d) {
+  // Medianoche UTC-6 representada como timestamp UTC
+  return new Date(Date.UTC(y, m - 1, d, -TIMEZONE_OFFSET, 0, 0));
+}
+
+function getIsoWeekFromDateKey(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const date = dateFromLocalParts(y, m, d);
+  const tmp = new Date(date.getTime());
+  tmp.setUTCHours(0, 0, 0, 0);
+  const day = (tmp.getUTCDay() + 6) % 7; // lunes=0
+  tmp.setUTCDate(tmp.getUTCDate() - day + 3); // jueves de la semana
+  const firstThursday = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 4));
+  firstThursday.setUTCHours(0, 0, 0, 0);
+  const firstDay = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDay + 3);
+  const weekNum = 1 + Math.floor((tmp - firstThursday) / (7 * 24 * 3600_000));
+  return { year: tmp.getUTCFullYear(), week: weekNum };
+}
+
+function parseDateKey(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return dateFromLocalParts(y, m, d);
+}
+
 /* ═══════════════════════════════════════════
    UPTIME — no rounding
 ═══════════════════════════════════════════ */
@@ -497,6 +523,7 @@ async function ensureStorage() {
     await fs.writeFile(STATUS_FILE, JSON.stringify({
       updatedAt: null, timezone: TIMEZONE_OFFSET, totalonline: 0,
       services: {}, announcements: [], incidents: [], sections: [],
+      globalUptime: { daily: [], weekly: [], monthly: [], yearly: [] },
     }, null, 2));
   }
 }
@@ -514,6 +541,91 @@ async function saveStatus(data) {
 /* ═══════════════════════════════════════════
    PING – watch checkers.js (http, tcp, udp, ping, dns, keyword)
 ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   GLOBAL UPTIME HISTORY
+═══════════════════════════════════════════ */
+
+const GLOBAL_RETENTION = {
+  daily: 90,
+  weekly: 52,
+  monthly: 24,
+  yearly: 5,
+};
+
+function ensureGlobalUptime(store) {
+  store.globalUptime ??= { daily: [], weekly: [], monthly: [], yearly: [] };
+  for (const k of Object.keys(GLOBAL_RETENTION)) {
+    if (!Array.isArray(store.globalUptime[k])) store.globalUptime[k] = [];
+  }
+  return store.globalUptime;
+}
+
+function upsertDaily(globalUptime, todayKey, totalonline) {
+  let entry = globalUptime.daily.find(d => d.date === todayKey);
+  if (!entry) {
+    entry = { date: todayKey, onlineper: 0, samples: 0 };
+    globalUptime.daily.push(entry);
+  }
+  // Promedio acumulado por minuto para el día actual
+  entry.onlineper = precise((entry.onlineper * entry.samples + totalonline) / (entry.samples + 1));
+  entry.samples = (entry.samples ?? 0) + 1;
+}
+
+function aggregatePeriod(dailyEntries, keyFn) {
+  const groups = new Map();
+  for (const d of dailyEntries) {
+    const key = keyFn(d);
+    const keyStr = `${key.type}|${key.year}|${key.week ?? 0}|${key.month ?? 0}`;
+    if (!groups.has(keyStr)) groups.set(keyStr, { sum: 0, count: 0, key });
+    const g = groups.get(keyStr);
+    g.sum += d.onlineper;
+    g.count++;
+  }
+  const result = [];
+  for (const { key, sum, count } of groups.values()) {
+    result.push({
+      ...(key.type === "week" ? { year: key.year, week: key.week } :
+          key.type === "month" ? { year: key.year, month: key.month } :
+          { year: key.year }),
+      onlineper: precise(sum / count),
+      samples: count,
+    });
+  }
+  return result.sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    if ((a.week ?? 0) !== (b.week ?? 0)) return (a.week ?? 0) - (b.week ?? 0);
+    if ((a.month ?? 0) !== (b.month ?? 0)) return (a.month ?? 0) - (b.month ?? 0);
+    return 0;
+  });
+}
+
+function updateGlobalUptime(store, todayKey, totalonline) {
+  const globalUptime = ensureGlobalUptime(store);
+
+  upsertDaily(globalUptime, todayKey, totalonline);
+
+  // Ordenar días y recortar a retención
+  globalUptime.daily = globalUptime.daily
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(-GLOBAL_RETENTION.daily);
+
+  // Recomputar semanas, meses y años a partir de días disponibles
+  globalUptime.weekly = aggregatePeriod(globalUptime.daily, d => {
+    const { year, week } = getIsoWeekFromDateKey(d.date);
+    return { type: "week", year, week };
+  }).slice(-GLOBAL_RETENTION.weekly);
+
+  globalUptime.monthly = aggregatePeriod(globalUptime.daily, d => {
+    const [year, month] = d.date.split("-").map(Number);
+    return { type: "month", year, month };
+  }).slice(-GLOBAL_RETENTION.monthly);
+
+  globalUptime.yearly = aggregatePeriod(globalUptime.daily, d => {
+    const [year] = d.date.split("-").map(Number);
+    return { type: "year", year };
+  }).slice(-GLOBAL_RETENTION.yearly);
+}
 
 /* ═══════════════════════════════════════════
    PRINCIPAL CHECK LOOP
@@ -815,6 +927,8 @@ async function runCheck(sections, forceAll = false) {
   }
   store.totalonline = totalCount > 0 ? precise(totalSum / totalCount) : 0;
   store.sections    = sections.map(s => ({ id: s.id, name: s.name }));
+
+  updateGlobalUptime(store, todayKey, store.totalonline);
 
   await saveStatus(store);
   info(`[uptime] ✓ Check complete — Total online: ${store.totalonline}%`);
