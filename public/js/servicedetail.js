@@ -27,8 +27,10 @@ function calcRangeUptime(svc, days) {
 function uptimeTileEl(label, pct) {
   let cls = "na", val = "—";
   if (typeof pct === "number" && !Number.isNaN(pct)) {
-    val = truncate3(pct).toFixed(3) + "%";
-    cls = pct >= 95 ? "excellent" : pct >= 89 ? "good" : "poor";
+    let v = pct;
+    if (v >= 0 && v <= 1) v *= 100;
+    val = truncate3(v).toFixed(3) + "%";
+    cls = v >= 98 ? "excellent" : v >= 95 ? "good" : "poor";
   }
   const tile = document.createElement("div");
   tile.className = "svc-uptime-tile";

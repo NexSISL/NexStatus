@@ -22,11 +22,11 @@
   "service-detail-latency-24h": "Latencia 24h",
   "service-detail-related-incidents": "Incidentes relacionados",
   "service-detail-no-incidents": "Sin incidentes registrados",
-  "service-detail-legend-excellent": "≥ 95%",
-  "service-detail-legend-good": "89–95%",
-  "service-detail-legend-poor": "< 89%",
+  "service-detail-legend-excellent": "≥ 98%",
+  "service-detail-legend-good": "95–98%",
+  "service-detail-legend-poor": "< 95%",
   "service-detail-legend-nodata": "Sin datos",
-  "global-uptime-history-link": "Ver histórico global",
+  "global-uptime-history-link": "Ver historial global",
   "global-uptime-title": "Disponibilidad global",
   "global-uptime-period-day": "Día",
   "global-uptime-period-week": "Semana",
@@ -35,5 +35,6 @@
   "global-uptime-back": "Volver",
   "global-uptime-no-data": "Sin datos disponibles",
   "global-uptime-date": "Periodo",
-  "global-uptime-availability": "Disponibilidad"
+  "global-uptime-availability": "Disponibilidad",
+  "global-uptime-incidents": "Incidentes"
 }

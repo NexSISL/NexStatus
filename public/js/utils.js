@@ -85,8 +85,10 @@ function formatShortPercent(value) {
 
 function getUptimeClass(percent) {
   if (typeof percent !== "number") return "";
-  if (percent >= 95) return "excellent";
-  if (percent >= 89) return "good";
+  let v = percent;
+  if (v >= 0 && v <= 1) v *= 100;
+  if (v >= 98) return "excellent";
+  if (v >= 95) return "good";
   return "poor";
 }
 

@@ -80,7 +80,7 @@ function buildCalendarHistory(container, history) {
         if (h && typeof h.onlineper === "number") {
           let v = h.onlineper;
           if (v >= 0 && v <= 1) v *= 100;
-          const cls = v >= 95 ? "excellent" : v >= 89 ? "good" : "poor";
+          const cls = v >= 98 ? "excellent" : v >= 95 ? "good" : "poor";
           cell.classList.add(cls);
           const pctStr = truncate3(v).toFixed(3) + "%";
           cell.dataset.time      = key;
@@ -148,7 +148,10 @@ function createHistory(history = []) {
     const hasReal = h && (h.onlineper > 0 || !isToday);
 
     if (hasReal) {
-      dot.classList.add(getUptimeClass(h.onlineper) || "poor");
+      let v = h.onlineper;
+      if (v >= 0 && v <= 1) v *= 100;
+      const cls = v >= 98 ? "excellent" : v >= 95 ? "good" : "poor";
+      dot.classList.add(cls);
       dot.dataset.time      = h.date;
       dot.dataset.percent   = formatShortPercent(h.onlineper);
       dot.dataset.monitored = "true";
