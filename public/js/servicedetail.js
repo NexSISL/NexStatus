@@ -187,7 +187,10 @@ function renderServiceDetail(container, svc, allIncidents) {
     sparkSection.className = "svc-section";
     sparkSection.appendChild(el("div", texts["service-detail-latency-24h"] || "Latencia 24h", "svc-section-title"));
     const sparkEl = createSparkline(svc.latencySparkline);
-    if (sparkEl) sparkSection.appendChild(sparkEl);
+    if (sparkEl) {
+      sparkEl.style.width = "100%";
+      sparkSection.appendChild(sparkEl);
+    }
     container.appendChild(sparkSection);
   }
 

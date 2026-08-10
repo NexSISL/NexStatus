@@ -36,5 +36,7 @@
   "global-uptime-no-data": "Sin datos disponibles",
   "global-uptime-date": "Periodo",
   "global-uptime-availability": "Disponibilidad",
-  "global-uptime-incidents": "Incidentes"
+  "global-uptime-incidents": "Incidentes",
+  "global-uptime-view-month": "Ver incidentes del mes",
+  "global-uptime-view-year": "Ver incidentes del año"
 }

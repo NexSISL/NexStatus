@@ -133,6 +133,69 @@ function openIncidentModal(periodKey, incidents, period, texts) {
   document.body.style.overflow = "hidden";
 }
 
+function openIncidentModalForList(titleKey, incidentList, texts) {
+  closeIncidentModal();
+
+  const overlay = document.createElement("div");
+  overlay.className = "global-uptime-modal-overlay";
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeIncidentModal();
+  });
+
+  const modal = document.createElement("div");
+  modal.className = "global-uptime-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const header = document.createElement("div");
+  header.className = "global-uptime-modal-header";
+
+  const title = document.createElement("div");
+  title.className = "global-uptime-modal-title";
+  title.textContent = `${texts["global-uptime-incidents"] || "Incidentes"} · ${titleKey}`;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "global-uptime-modal-close";
+  closeBtn.setAttribute("aria-label", texts["global-uptime-back"] || "Cerrar");
+  closeBtn.innerHTML = "<i class=\"fa-solid fa-xmark\" aria-hidden=\"true\"></i>";
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeIncidentModal();
+  });
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "global-uptime-modal-body";
+
+  if (incidentList.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "global-uptime-modal-empty";
+    empty.textContent = "Sin incidentes para este período";
+    body.appendChild(empty);
+  } else {
+    incidentList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    incidentList.forEach(inc => body.appendChild(renderIncidentCard(inc, false)));
+  }
+
+  modal.appendChild(body);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => overlay.classList.add("visible"));
+  });
+
+  const onKey = (e) => { if (e.key === "Escape") closeIncidentModal(); };
+  document.addEventListener("keydown", onKey);
+  overlay._keydownHandler = onKey;
+
+  document.body.style.overflow = "hidden";
+}
+
 function closeIncidentModal() {
   const overlay = document.querySelector(".global-uptime-modal-overlay");
   if (!overlay) return;
@@ -199,15 +262,28 @@ function renderGlobalUptime(container, data, initialState) {
     openIncidentModal(key, incidents, activePeriod, texts);
   }
 
+  function showIncidentsForMonth(monthKey) {
+    openIncidentModal(monthKey, incidents, "monthly", texts);
+  }
+
+  function showIncidentsForYear(year) {
+    const yearIncidents = incidents.filter(inc => {
+      const created = new Date(inc.createdAt);
+      const local = new Date(created.getTime() + created.getTimezoneOffset() * 60_000 + dataTimezone * 3_600_000);
+      return local.getFullYear() === year;
+    });
+    openIncidentModalForList(`${year}`, yearIncidents, texts);
+  }
+
   function renderCalendar() {
     calendarWrap.innerHTML = "";
 
     if (activePeriod === "daily") {
-      renderDailyCalendar(calendarWrap, globalUptime.daily || [], showIncidentsFor, selectedYear, initialState?.month);
+      renderDailyCalendar(calendarWrap, globalUptime.daily || [], showIncidentsFor, showIncidentsForMonth, showIncidentsForYear, selectedYear, initialState?.month, texts);
     } else if (activePeriod === "weekly") {
-      renderWeeklyCalendar(calendarWrap, globalUptime.weekly || [], showIncidentsFor, selectedYear, texts, ap);
+      renderWeeklyCalendar(calendarWrap, globalUptime.weekly || [], showIncidentsFor, showIncidentsForMonth, showIncidentsForYear, selectedYear, texts, ap);
     } else {
-      renderMonthlyCalendar(calendarWrap, globalUptime.monthly || [], globalUptime.daily || [], showIncidentsFor, selectedYear, texts, ap);
+      renderMonthlyCalendar(calendarWrap, globalUptime.monthly || [], globalUptime.daily || [], showIncidentsFor, showIncidentsForMonth, showIncidentsForYear, selectedYear, texts, ap);
     }
   }
 
@@ -240,7 +316,7 @@ function renderGlobalUptime(container, data, initialState) {
 }
 
 /* ── DÍA: calendario mensual con selector de año/mes ── */
-function renderDailyCalendar(container, dailyEntries, onSelect, selectedYear, initialMonth) {
+function renderDailyCalendar(container, dailyEntries, onSelect, onSelectMonth, onSelectYear, selectedYear, initialMonth, texts) {
   const locale = "es-ES";
   const serverNow = getServerNow();
   const currentYear = serverNow.getFullYear();
@@ -292,10 +368,26 @@ function renderDailyCalendar(container, dailyEntries, onSelect, selectedYear, in
   nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
   nextYear.addEventListener("click", () => { viewYear++; rerender(); });
 
+  const viewMonthBtn = document.createElement("button");
+  viewMonthBtn.type = "button";
+  viewMonthBtn.className = "global-calendar-view-period-btn";
+  viewMonthBtn.title = texts["global-uptime-view-month"] || "Ver incidentes del mes";
+  viewMonthBtn.innerHTML = "<i class=\"fa-solid fa-list\" aria-hidden=\"true\"></i>";
+  viewMonthBtn.addEventListener("click", () => onSelectMonth(`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`));
+
+  const viewYearBtn = document.createElement("button");
+  viewYearBtn.type = "button";
+  viewYearBtn.className = "global-calendar-view-period-btn";
+  viewYearBtn.title = texts["global-uptime-view-year"] || "Ver incidentes del año";
+  viewYearBtn.innerHTML = "<i class=\"fa-solid fa-calendar\" aria-hidden=\"true\"></i>";
+  viewYearBtn.addEventListener("click", () => onSelectYear(viewYear));
+
   controls.appendChild(prevYear);
   controls.appendChild(yearLabel);
   controls.appendChild(nextYear);
   controls.appendChild(monthSelect);
+  controls.appendChild(viewMonthBtn);
+  controls.appendChild(viewYearBtn);
   wrap.appendChild(controls);
 
   const calendarBody = document.createElement("div");
@@ -387,7 +479,7 @@ function renderDailyMonth(container, year, month, entriesByDate, onSelect, curre
 }
 
 /* ── SEMANA: grid de semanas del año agrupadas por mes ── */
-function renderWeeklyCalendar(container, weeklyEntries, onSelect, selectedYear, texts, ap) {
+function renderWeeklyCalendar(container, weeklyEntries, onSelect, onSelectMonth, onSelectYear, selectedYear, texts, ap) {
   const locale = ap?.language === "en" ? "en-US" : "es-ES";
   const serverNow = getServerNow();
   const currentYear = serverNow.getFullYear();
@@ -424,9 +516,17 @@ function renderWeeklyCalendar(container, weeklyEntries, onSelect, selectedYear, 
   nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
   nextYear.addEventListener("click", () => { viewYear++; rerender(); });
 
+  const viewYearBtn = document.createElement("button");
+  viewYearBtn.type = "button";
+  viewYearBtn.className = "global-calendar-view-period-btn";
+  viewYearBtn.title = texts["global-uptime-view-year"] || "Ver incidentes del año";
+  viewYearBtn.innerHTML = "<i class=\"fa-solid fa-calendar\" aria-hidden=\"true\"></i>";
+  viewYearBtn.addEventListener("click", () => onSelectYear(viewYear));
+
   controls.appendChild(prevYear);
   controls.appendChild(yearLabel);
   controls.appendChild(nextYear);
+  controls.appendChild(viewYearBtn);
   wrap.appendChild(controls);
 
   const calendarBody = document.createElement("div");
@@ -435,13 +535,13 @@ function renderWeeklyCalendar(container, weeklyEntries, onSelect, selectedYear, 
 
   function rerender() {
     calendarBody.innerHTML = "";
-    renderYearWeekGrid(calendarBody, viewYear, entriesByKey, onSelect, currentYear, currentMonth, currentWeek, locale);
+    renderYearWeekGrid(calendarBody, viewYear, entriesByKey, onSelect, onSelectMonth, onSelectYear, currentYear, currentMonth, currentWeek, locale, texts);
     yearLabel.textContent = viewYear;
   }
   rerender();
 }
 
-function renderYearWeekGrid(container, year, entriesByKey, onSelect, currentYear, currentMonth, currentWeek, locale) {
+function renderYearWeekGrid(container, year, entriesByKey, onSelect, onSelectMonth, onSelectYear, currentYear, currentMonth, currentWeek, locale, texts) {
   const title = document.createElement("div");
   title.className = "global-calendar-month-title";
   title.textContent = year;
@@ -467,10 +567,24 @@ function renderYearWeekGrid(container, year, entriesByKey, onSelect, currentYear
     const monthSection = document.createElement("div");
     monthSection.className = "global-uptime-week-month";
 
+    const monthHeader = document.createElement("div");
+    monthHeader.className = "global-uptime-week-month-header";
+
     const monthTitle = document.createElement("div");
     monthTitle.className = "global-uptime-week-month-title";
     monthTitle.textContent = monthName;
-    monthSection.appendChild(monthTitle);
+
+    const viewMonthBtn = document.createElement("button");
+    viewMonthBtn.type = "button";
+    viewMonthBtn.className = "global-year-month-view-btn";
+    viewMonthBtn.title = texts["global-uptime-view-month"] || "Ver incidentes del mes";
+    viewMonthBtn.innerHTML = "<i class=\"fa-solid fa-list\" aria-hidden=\"true\"></i>";
+    const monthKey = `${year}-${String(m).padStart(2, "0")}`;
+    viewMonthBtn.addEventListener("click", () => onSelectMonth(monthKey));
+
+    monthHeader.appendChild(monthTitle);
+    monthHeader.appendChild(viewMonthBtn);
+    monthSection.appendChild(monthHeader);
 
     const weeksRow = document.createElement("div");
     weeksRow.className = "global-uptime-weeks-row";
@@ -513,7 +627,7 @@ function renderYearWeekGrid(container, year, entriesByKey, onSelect, currentYear
 }
 
 /* ── MES: 12 calendarios mensuales del año ── */
-function renderMonthlyCalendar(container, monthlyEntries, dailyEntries, onSelect, selectedYear, texts, ap) {
+function renderMonthlyCalendar(container, monthlyEntries, dailyEntries, onSelect, onSelectMonth, onSelectYear, selectedYear, texts, ap) {
   const locale = ap?.language === "en" ? "en-US" : "es-ES";
   const serverNow = getServerNow();
   let viewYear = selectedYear;
@@ -544,9 +658,17 @@ function renderMonthlyCalendar(container, monthlyEntries, dailyEntries, onSelect
   nextYear.innerHTML = "<i class=\"fa-solid fa-chevron-right\" aria-hidden=\"true\"></i>";
   nextYear.addEventListener("click", () => { viewYear++; rerender(); });
 
+  const viewYearBtn = document.createElement("button");
+  viewYearBtn.type = "button";
+  viewYearBtn.className = "global-calendar-view-period-btn";
+  viewYearBtn.title = texts["global-uptime-view-year"] || "Ver incidentes del año";
+  viewYearBtn.innerHTML = "<i class=\"fa-solid fa-calendar\" aria-hidden=\"true\"></i>";
+  viewYearBtn.addEventListener("click", () => onSelectYear(viewYear));
+
   controls.appendChild(prevYear);
   controls.appendChild(yearLabel);
   controls.appendChild(nextYear);
+  controls.appendChild(viewYearBtn);
   wrap.appendChild(controls);
 
   const calendarBody = document.createElement("div");
@@ -555,13 +677,13 @@ function renderMonthlyCalendar(container, monthlyEntries, dailyEntries, onSelect
 
   function rerender() {
     calendarBody.innerHTML = "";
-    renderYearMonthsAsCalendars(calendarBody, viewYear, dailyEntries, onSelect, currentYear, currentMonth, currentDay, locale);
+    renderYearMonthsAsCalendars(calendarBody, viewYear, dailyEntries, onSelect, onSelectMonth, currentYear, currentMonth, currentDay, locale, texts);
     yearLabel.textContent = viewYear;
   }
   rerender();
 }
 
-function renderYearMonthsAsCalendars(container, year, dailyEntries, onSelect, currentYear, currentMonth, currentDay, locale) {
+function renderYearMonthsAsCalendars(container, year, dailyEntries, onSelect, onSelectMonth, currentYear, currentMonth, currentDay, locale, texts) {
   const title = document.createElement("div");
   title.className = "global-calendar-month-title";
   title.textContent = year;
@@ -582,10 +704,23 @@ function renderYearMonthsAsCalendars(container, year, dailyEntries, onSelect, cu
     const monthWrap = document.createElement("div");
     monthWrap.className = "global-year-month-calendar";
 
+    const monthHeader = document.createElement("div");
+    monthHeader.className = "global-year-month-calendar-header";
+
     const monthTitle = document.createElement("div");
     monthTitle.className = "global-year-month-calendar-title";
     monthTitle.textContent = new Date(year, m - 1, 1).toLocaleDateString(locale, { month: "long" });
-    monthWrap.appendChild(monthTitle);
+
+    const viewMonthBtn = document.createElement("button");
+    viewMonthBtn.type = "button";
+    viewMonthBtn.className = "global-year-month-view-btn";
+    viewMonthBtn.title = texts["global-uptime-view-month"] || "Ver incidentes del mes";
+    viewMonthBtn.innerHTML = "<i class=\"fa-solid fa-list\" aria-hidden=\"true\"></i>";
+    viewMonthBtn.addEventListener("click", () => onSelectMonth(monthKey));
+
+    monthHeader.appendChild(monthTitle);
+    monthHeader.appendChild(viewMonthBtn);
+    monthWrap.appendChild(monthHeader);
 
     const firstDay = new Date(year, m - 1, 1);
     const startWd = (firstDay.getDay() + 6) % 7;
@@ -633,7 +768,7 @@ function renderYearMonthsAsCalendars(container, year, dailyEntries, onSelect, cu
         cell.dataset.monitored = "true";
         cell.dataset.isToday = isToday ? "true" : "false";
         cell.setAttribute("aria-label", `${dateKey}: ${pctStr} uptime`);
-        cell.addEventListener("click", () => onSelect(monthKey));
+        cell.addEventListener("click", () => onSelect(dateKey));
       } else {
         cell.classList.add("nm");
         cell.dataset.time = dateKey;

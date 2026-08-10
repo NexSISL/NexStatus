@@ -487,6 +487,8 @@ section h3 {
 .sparkline-wrap {
   margin-top: 10px;
   display: flex; flex-direction: column; gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 
 .sparkline-label {
@@ -495,12 +497,30 @@ section h3 {
 }
 
 .sparkline-svg {
-  width: 100%; height: 32px; overflow: visible;
+  width: 100%;
+  height: 32px;
+  overflow: visible;
+  display: block;
 }
 
-.sparkline-line { fill: none; stroke: rgba(var(--accent), .6); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sparkline-line {
+  fill: none;
+  stroke: rgba(var(--accent), .6);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .sparkline-area { fill: url(#sparkGrad); }
-.sparkline-dot  { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--accent)); box-shadow: 0 0 6px rgba(var(--accent), .7); }
+
+.sparkline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  box-shadow: 0 0 6px rgba(var(--accent), .7);
+}
 
 /* ═══════════════════════════════════════════
    UPTIME HISTORY (30 DÍAS)
@@ -985,6 +1005,11 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   text-align: right;
 }
 
+@media (max-width: 560px) {
+  .uptime-actions { text-align: center; }
+  .uptime-history-link { width: 100%; justify-content: center; }
+}
+
 .uptime-history-link {
   display: inline-flex;
   align-items: center;
@@ -1112,6 +1137,28 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   border-radius: 8px;
   cursor: pointer;
   text-transform: capitalize;
+  flex: 1;
+  min-width: 120px;
+}
+
+.global-calendar-view-period-btn {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .1);
+  color: rgb(var(--accent));
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  transition: background .2s, border-color .2s;
+  flex-shrink: 0;
+}
+
+.global-calendar-view-period-btn:hover {
+  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 255, 255, .2);
 }
 
 .global-calendar-month-title {
@@ -1136,11 +1183,18 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   padding: 14px;
 }
 
+.global-uptime-week-month-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .global-uptime-week-month-title {
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 10px;
   text-transform: capitalize;
 }
 
@@ -1224,12 +1278,39 @@ footer { text-align: center; color: rgb(var(--muted)); font-size: 13px; }
   padding: 12px;
 }
 
+.global-year-month-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .global-year-month-calendar-title {
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 8px;
   text-transform: capitalize;
+}
+
+.global-year-month-view-btn {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .1);
+  color: rgb(var(--accent));
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  transition: background .2s, border-color .2s;
+  flex-shrink: 0;
+}
+
+.global-year-month-view-btn:hover {
+  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 255, 255, .2);
 }
 
 .cal-header.small {

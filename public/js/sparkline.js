@@ -49,8 +49,9 @@ function createSparkline(data) {
   svg.setAttribute("aria-label", `Average latency chart: ${avgLat} ms`);
 
   const defs = document.createElementNS(NS, "defs");
+  const gradId = `sparkGrad-${Math.random().toString(36).slice(2, 9)}`;
   const grad = document.createElementNS(NS, "linearGradient");
-  grad.setAttribute("id", "sparkGrad");
+  grad.setAttribute("id", gradId);
   grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
   grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
   const stop1 = document.createElementNS(NS, "stop");
@@ -62,11 +63,21 @@ function createSparkline(data) {
   svg.appendChild(defs);
 
   const area = document.createElementNS(NS, "path");
-  area.setAttribute("class", "sparkline-area"); area.setAttribute("d", areaD);
+  area.setAttribute("fill", `url(#${gradId})`);
+  area.setAttribute("d", areaD);
+  area.style.fill = `url(#${gradId})`;
   svg.appendChild(area);
 
   const line = document.createElementNS(NS, "polyline");
-  line.setAttribute("class", "sparkline-line"); line.setAttribute("points", linePts);
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", "rgba(56,189,248,.6)");
+  line.setAttribute("stroke-width", "1.5");
+  line.setAttribute("stroke-linecap", "round");
+  line.setAttribute("stroke-linejoin", "round");
+  line.setAttribute("points", linePts);
+  line.style.fill = "none";
+  line.style.stroke = "rgba(56,189,248,.6)";
+  line.style.strokeWidth = "1.5px";
   svg.appendChild(line);
 
   // Hover dots
@@ -94,7 +105,7 @@ function createSparkline(data) {
   const rightPct = ((W - lastPt[0]) / W * 100).toFixed(2);
   const dotDiv = document.createElement("div");
   dotDiv.className = "sparkline-dot";
-  dotDiv.style.cssText = `position:absolute;right:${rightPct}%;top:${(lastPt[1] - 4).toFixed(1)}px;pointer-events:none;`;
+  dotDiv.style.cssText = `position:absolute;right:${rightPct}%;top:${(lastPt[1] - 4).toFixed(1)}px;pointer-events:none;display:block;`;
   svgWrap.appendChild(dotDiv);
 
   wrap.appendChild(svgWrap);
