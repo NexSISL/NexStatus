@@ -118,25 +118,18 @@
   const btnText    = document.getElementById("btn-text");
 
   // Valid session found, redirect to admin
-  const saved = sessionStorage.getItem("nexora_admin_token");
+  const saved = sessionStorage.getItem("nexora_admin_session");
   if (saved) {
-    fetch("/admin/api/settings", { headers: { "x-admin-token": saved } })
+    fetch("/admin/api/settings", { headers: { Authorization: `Bearer ${saved}` } })
       .then(r => {
         if (r.ok) return r.json();
-        sessionStorage.removeItem("nexora_admin_token");
+        sessionStorage.removeItem("nexora_admin_session");
       })
       .then(cfg => {
         if (!cfg) return;
-        if (cfg.hasTotpSecret) {
-          // TOTP present — pre-fill password but request code
-          tokenInput.value = saved;
-          totpInput.focus();
-          return;
-        }
-        // No TOTP → redirect directly
         window.location.replace("/admin");
       })
-      .catch(() => sessionStorage.removeItem("nexora_admin_token"));
+      .catch(() => sessionStorage.removeItem("nexora_admin_session"));
   }
 
   document.getElementById("login-btn").addEventListener("click", doLogin);
@@ -160,8 +153,10 @@
       });
       const data = await res.json();
 
-      if (data.ok) {
-        sessionStorage.setItem("nexora_admin_token", data.sessionToken ?? token);
+      if (data.ok && data.sessionToken) {
+        sessionStorage.setItem("nexora_admin_session", data.sessionToken);
+        sessionStorage.removeItem("nexora_admin_token");
+        tokenInput.value = "";
         window.location.replace("/admin");
       } else {
         showError(data.error ?? "Invalid credentials");

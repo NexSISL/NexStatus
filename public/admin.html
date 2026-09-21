@@ -957,7 +957,8 @@ function esc(s) {
    STATE
 ═══════════════════════════════════════════ */
 
-let TOKEN       = sessionStorage.getItem("nexora_admin_token") ?? "";
+let TOKEN       = sessionStorage.getItem("nexora_admin_session") ?? "";
+sessionStorage.removeItem("nexora_admin_token");
 let statusData  = null;
 let sectionsData = [];
 let discordStatusSelection = [];
@@ -1231,7 +1232,7 @@ function openModal(html, { onConfirm, confirmText = "Confirmar", confirmClass = 
 ═══════════════════════════════════════════ */
 
 document.getElementById("logout-btn").addEventListener("click", () => {
-  sessionStorage.removeItem("nexora_admin_token");
+  sessionStorage.removeItem("nexora_admin_session");
   window.location.replace("/login");
 });
 
@@ -1240,11 +1241,11 @@ if (!TOKEN) {
   window.location.replace("/login");
 } else {
   fetch("/admin/api/settings", {
-    headers: { "x-admin-token": TOKEN },
+    headers: { Authorization: `Bearer ${TOKEN}` },
   }).then(r => {
     if (!r.ok) {
       TOKEN = "";
-      sessionStorage.removeItem("nexora_admin_token");
+      sessionStorage.removeItem("nexora_admin_session");
       window.location.replace("/login");
       return null;
     }
@@ -1256,7 +1257,7 @@ if (!TOKEN) {
     initApp();
   }).catch(() => {
     TOKEN = "";
-    sessionStorage.removeItem("nexora_admin_token");
+    sessionStorage.removeItem("nexora_admin_session");
     window.location.replace("/login");
   });
 }
@@ -1270,13 +1271,14 @@ async function api(method, path, body) {
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Token": TOKEN,
+      Authorization: `Bearer ${TOKEN}`,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 401) {
-    showToast("Invalid token. Please log in again.", "error");
+    sessionStorage.removeItem("nexora_admin_session");
+    window.location.replace("/login");
     throw new Error("Unauthorized");
   }
 
@@ -1350,15 +1352,7 @@ document.getElementById("restart-detector-btn")?.addEventListener("click", () =>
         <button class="modal-close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Confirm your password (and TOTP code, if enabled) to restart the monitoring process.</p>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input class="form-input" type="password" id="restart-confirm-pw"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">TOTP code (if enabled)</label>
-          <input class="form-input" type="text" id="restart-confirm-totp" placeholder="123456"/>
-        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Your authenticated session will be used to restart the monitoring process.</p>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost modal-close">Cancel</button>
@@ -1367,10 +1361,8 @@ document.getElementById("restart-detector-btn")?.addEventListener("click", () =>
     </div>
   `, {
     onConfirm: async (overlay) => {
-      const token = document.getElementById("restart-confirm-pw").value;
-      const code  = document.getElementById("restart-confirm-totp").value.trim();
       try {
-        const r = await api("POST", "/admin/api/detector/restart", { token, code });
+        const r = await api("POST", "/admin/api/detector/restart", {});
         if (r.ok) { showToast("Detector restarting..."); overlay.remove(); }
         else showToast(r.error ?? "Restart failed", "error");
       } catch {
@@ -1423,7 +1415,7 @@ async function loadDashboard() {
           ${esc(svc.name)}
         </td>
         <td style="color:var(--muted);font-size:12px;">${esc(svc.sectionId ?? "—")}</td>
-        <td><span class="badge badge-${esc(svc.status)}">${svc.status === "up" ? "Operational" : "Down"}</span></td>
+        <td><span class="badge badge-${esc(svc.status)}">${({ up: "Operational", down: "Down", monitoring: "Monitoring", maintenance: "Maintenance" })[svc.status] ?? "Unknown"}</span></td>
         <td>${esc(lat)}</td>
         <td>${esc(upt)}</td>
         <td style="color:var(--muted);font-size:12px;">${fmtRelative(svc.checkedAt)}</td>
@@ -2389,9 +2381,9 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
     });
 
     if (adminToken) {
-      TOKEN = adminToken;
-      sessionStorage.setItem("nexora_admin_token", adminToken);
-      showToast("Settings saved. Token updated in session.");
+      sessionStorage.removeItem("nexora_admin_session");
+      showToast("Password updated. Please sign in again.");
+      setTimeout(() => window.location.replace("/login"), 800);
     } else {
       showToast("Settings saved");
     }
@@ -2425,7 +2417,7 @@ function openServiceDrawer(svc, allIncidents) {
   // Header
   const iconClass = svc.icon ?? "fa-solid fa-server";
   svcDrawerIconI.className = iconClass;
-  svcDrawerIcon.className  = "svc-drawer-icon " + (svc.status === "up" ? "up" : "down");
+  svcDrawerIcon.className  = "svc-drawer-icon " + (["up", "monitoring", "maintenance"].includes(svc.status) ? "up" : "down");
   svcDrawerTitle.textContent = svc.name;
   svcDrawerSub.textContent   = svc.url ?? svc.id ?? "—";
 
@@ -2513,7 +2505,7 @@ function openServiceDrawer(svc, allIncidents) {
         </div>
         <div class="svc-incident-meta">
           ${fmtRelative(inc.createdAt)}
-          ${isResolved ? " · Resolved in " + formatDurationSvc(inc.createdAt, inc.resolvedAt) : ""}
+          ${isResolved ? " · Downtime " + formatDowntimeSvc(inc.downtimeMs, inc.createdAt, inc.resolvedAt) : ""}
         </div>
       `;
       incSection.appendChild(entry);
@@ -2635,6 +2627,14 @@ function formatDurationSvc(fromIso, toIso) {
   if (d > 0) return `${d}d ${h % 24}h`;
   if (h > 0) return `${h}h ${m % 60}m`;
   return `${m}m`;
+}
+
+function formatDowntimeSvc(ms, fromIso, toIso) {
+  const value = Number.isFinite(Number(ms)) ? Number(ms) : new Date(toIso) - new Date(fromIso);
+  const totalMinutes = Math.max(0, Math.round(value / 60_000));
+  const h = Math.floor(totalMinutes / 60);
+  if (h > 0) return `${h}h ${totalMinutes % 60}m`;
+  return `${totalMinutes}m`;
 }
 
 // Make dashboard rows clickable

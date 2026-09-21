@@ -9,7 +9,7 @@ import dns from "dns/promises";
 import dgram from "dgram";
 import http from "http";
 import https from "https";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { setTimeout as sleep } from "timers/promises";
 
 export const TIMEOUT_MS = 10_000;
@@ -332,10 +332,15 @@ function udpPing(host, port) {
 // ICMP requires raw socket privileges → system binary "ping" is used.
 function icmpPing(host) {
   return new Promise(resolve => {
+    // Never pass user-controlled monitor data through a shell. Hostnames and
+    // IPs are deliberately restricted to characters accepted by ping.
+    if (typeof host !== "string" || !host || !/^[A-Za-z0-9.:%-]+$/.test(host) || /(^|\.)\.|\.\.$/.test(host)) {
+      return resolve({ status: "down", code: 0, latency: null, error: "invalid_host" });
+    }
     const start   = Date.now();
     const isWin   = process.platform === "win32";
-    const cmd     = isWin ? `ping -n 1 -w ${TIMEOUT_MS} ${host}` : `ping -c 1 -W ${Math.ceil(TIMEOUT_MS / 1000)} ${host}`;
-    exec(cmd, { timeout: TIMEOUT_MS + 1000 }, (err, stdout, stderr) => {
+    const args    = isWin ? ["-n", "1", "-w", String(TIMEOUT_MS), host] : ["-c", "1", "-W", String(Math.ceil(TIMEOUT_MS / 1000)), host];
+    execFile("ping", args, { timeout: TIMEOUT_MS + 1000, windowsHide: true }, (err, stdout, stderr) => {
       if (err) return resolve({ status: "down", code: 0, latency: null, error: "unreachable", debug: { exception: err.message, stderr: stderr?.slice(0, 300) } });
       resolve({ status: "up", code: 1, latency: Date.now() - start });
     });

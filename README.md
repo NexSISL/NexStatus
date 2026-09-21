@@ -29,7 +29,7 @@ Self-hosted status page with real-time uptime monitoring, incident management, a
 - **Backend** — Node.js (ESM), Express
 - **Frontend** — Vanilla JS, HTML, CSS (no frameworks)
 - **Persistence** — JSON files
-- **Auth** — token-based (`x-admin-token` header) + optional TOTP
+- **Auth** — short-lived signed JWT session (`Authorization: Bearer …`) + optional TOTP; the password is only sent to the login endpoint
 
 ---
 
@@ -75,7 +75,8 @@ All variables live in `.env` in the project root. The setup wizard writes them f
 
 | Variable | Required | Description |
 |---|---|---|
-| `ADMIN_TOKEN` | ✅ | Admin password (min 16 chars) |
+| `ADMIN_TOKEN` | ✅ | Admin password used only to issue a login session (min 16 chars) |
+| `JWT_SECRET` | ✅ | Secret used to sign admin JWT sessions; generated automatically during setup |
 | `PORT` | ❌ | HTTP port (default: `3015`) |
 | `NODE_ENV` | ❌ | Set to `production` to enable HSTS and prod warnings |
 | `TOTP_SECRET` | ❌ | Base32 TOTP secret for 2FA on admin login |

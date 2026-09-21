@@ -92,6 +92,14 @@ function getUptimeClass(percent) {
   return "poor";
 }
 
+function isServiceOperational(status) {
+  return status === "up" || status === "monitoring" || status === "maintenance";
+}
+
+function serviceStatusLabel(status) {
+  return ({ up: "Operational", down: "Disrupted", monitoring: "Monitoring", maintenance: "Maintenance" })[status] ?? "Unknown";
+}
+
 function formatDuration(fromIso, toIso) {
   const ms = new Date(toIso) - new Date(fromIso);
   const m  = Math.floor(ms / 60_000);
@@ -100,6 +108,14 @@ function formatDuration(fromIso, toIso) {
   if (d > 0) return `${d}d ${h % 24}h`;
   if (h > 0) return `${h}h ${m % 60}m`;
   return `${m}m`;
+}
+
+function formatDowntime(ms, fallbackFromIso = null, fallbackToIso = null) {
+  const value = Number.isFinite(Number(ms)) ? Number(ms) : (fallbackFromIso && fallbackToIso ? new Date(fallbackToIso) - new Date(fallbackFromIso) : 0);
+  const totalMinutes = Math.max(0, Math.round(value / 60_000));
+  const h = Math.floor(totalMinutes / 60);
+  if (h > 0) return `${h}h ${totalMinutes % 60}m`;
+  return `${totalMinutes}m`;
 }
 
 /* ═══════════════════════════════════════════

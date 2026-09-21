@@ -13,7 +13,7 @@ function renderIncidentCard(inc, collapsed = false) {
   card.appendChild(header);
 
   const duration = inc.resolvedAt
-    ? ` • Duration: ${formatDuration(inc.createdAt, inc.resolvedAt)}`
+    ? ` • Downtime: ${formatDowntime(inc.downtimeMs, inc.createdAt, inc.resolvedAt)}`
     : "";
 
   const metaEl = document.createElement("div");

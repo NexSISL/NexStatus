@@ -105,7 +105,7 @@ function renderServiceDetail(container, svc, allIncidents) {
   statusPill.appendChild(dotEl);
   const statusLabel = svc.status === "up"
     ? (texts["service-detail-status-operational"] || "Operational")
-    : (svc.status === "down" ? (texts["service-detail-status-down"] || "Disrupted") : (texts["service-detail-status-unknown"] || "Unknown"));
+    : (svc.status === "monitoring" ? "Monitoring" : (svc.status === "maintenance" ? "Maintenance" : (svc.status === "down" ? (texts["service-detail-status-down"] || "Disrupted") : (texts["service-detail-status-unknown"] || "Unknown"))));
   statusPill.appendChild(document.createTextNode(statusLabel));
   heroRight.appendChild(statusPill);
 

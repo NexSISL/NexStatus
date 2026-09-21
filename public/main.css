@@ -431,6 +431,8 @@ section h3 {
 
 .quick-view-status.up   { color: rgb(var(--success)); background: rgba(var(--success), .1); }
 .quick-view-status.down { color: rgb(var(--danger));  background: rgba(var(--danger),  .1); }
+.quick-view-status.monitoring { color: rgb(var(--info)); background: rgba(var(--info), .1); }
+.quick-view-status.maintenance { color: rgb(var(--warning)); background: rgba(var(--warning), .1); }
 
 /* ═══════════════════════════════════════════
    DETAILS / CARDS
@@ -469,6 +471,8 @@ section h3 {
 .pill { padding: 6px 10px; font-weight: 600; border-radius: 999px; font-size: 13px; }
 .pill.up   { color: rgb(var(--success)); background: rgba(var(--success), .12); }
 .pill.down { color: rgb(var(--danger));  background: rgba(var(--danger),  .12); }
+.pill.monitoring { color: rgb(var(--info)); background: rgba(var(--info), .12); }
+.pill.maintenance { color: rgb(var(--warning)); background: rgba(var(--warning), .12); }
 
 .service-icon {
   width: 34px; height: 34px; border-radius: 10px;

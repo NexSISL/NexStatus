@@ -18,6 +18,7 @@ import path from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { pingService, tcpPing, isDnsErrorResult, checkDnsHealth } from "./checkers.js";
 import { info, success, error, warn } from "./console.js";
+import { withFileLock, tempPath } from "./file-lock.js";
 
 /* ═══════════════════════════════════════════
    CONFIG BASE
@@ -242,7 +243,7 @@ function buildMonitoringEmbed(service, incident, now, extraFields = []) {
     fields: [
       { name: "Service", value: service.name,      inline: true },
       { name: "Status",  value: "🟡 Monitoring", inline: true },
-      { name: "Duration", value: formatDuration(incident.createdAt, now), inline: false },
+      { name: "Downtime", value: formatDowntime(incident.downtimeMs), inline: false },
       ...extraFields,
     ],
   };
@@ -258,7 +259,7 @@ function buildResolvedEmbed(service, incident, now) {
     fields: [
       { name: "Service",         value: service.name,                          inline: true },
       { name: "Status",          value: "✅ Operational",                        inline: true },
-      { name: "Time affected",  value: formatDuration(incident.createdAt, now), inline: false },
+      { name: "Downtime",      value: formatDowntime(incident.downtimeMs),       inline: false },
     ],
   };
 }
@@ -285,7 +286,7 @@ function buildUpdateEmbed(service, incident, update) {
   ];
 
   if (incident.updates?.length > 1) {
-    fields.push({ name: "Duration", value: formatDuration(incident.createdAt, update.at), inline: false });
+    fields.push({ name: "Downtime", value: formatDowntime(incident.downtimeMs), inline: false });
   }
 
   return {
@@ -339,10 +340,12 @@ async function handleServiceDown(store, service, initialResult = null) {
   const now        = new Date().toISOString();
   const incidentId = `inc-${Date.now()}`;
 
+  const intervalMs = Math.max(1_000, Number(service.checkInterval ?? 60) * 1_000);
   const incident = {
     id: incidentId, serviceId: service.id, serviceName: service.name,
     title: `Interruption — ${service.name}`, status: "investigating",
     automatic: true, createdAt: now, resolvedAt: null, discordMessageId: null,
+    downtimeMs: intervalMs,
     updates: [{ at: now, status: "investigating", message: "Outage detected automatically. Investigating." }],
   };
 
@@ -361,9 +364,11 @@ async function handleServiceDown(store, service, initialResult = null) {
       incident.discordMessageId = msgId;
       // Persist messageId in JSON immediately
       try {
-        const fresh = JSON.parse(await fs.readFile(STATUS_FILE, "utf8"));
-        const inc = fresh.incidents?.find(i => i.id === incidentId);
-        if (inc) { inc.discordMessageId = msgId; await saveStatus(fresh); }
+        await withFileLock(STATUS_FILE, async () => {
+          const fresh = JSON.parse(await fs.readFile(STATUS_FILE, "utf8"));
+          const inc = fresh.incidents?.find(i => i.id === incidentId);
+          if (inc) { inc.discordMessageId = msgId; await saveStatusUnlocked(fresh); }
+        });
       } catch {}
       info(`[Discord] 📨 Embed sent for ${service.id} (msg: ${msgId})`);
     } else {
@@ -452,6 +457,13 @@ function formatDuration(fromIso, toIso) {
   return `${m}m`;
 }
 
+function formatDowntime(ms) {
+  const totalMinutes = Math.max(0, Math.round(Number(ms ?? 0) / 60_000));
+  const h = Math.floor(totalMinutes / 60);
+  if (h > 0) return `${h}h ${totalMinutes % 60}m`;
+  return `${totalMinutes}m`;
+}
+
 /* ═══════════════════════════════════════════
    Time (UTC-6)
 ═══════════════════════════════════════════ */
@@ -520,11 +532,19 @@ async function ensureStorage() {
     if (!raw.trim()) throw new Error("Empty");
     JSON.parse(raw);
   } catch {
-    await fs.writeFile(STATUS_FILE, JSON.stringify({
-      updatedAt: null, timezone: TIMEZONE_OFFSET, totalonline: 0,
-      services: {}, announcements: [], incidents: [], sections: [],
-      globalUptime: { daily: [], weekly: [], monthly: [], yearly: [] },
-    }, null, 2));
+    await withFileLock(STATUS_FILE, async () => {
+      try {
+        const raw = await fs.readFile(STATUS_FILE, "utf8");
+        if (!raw.trim()) throw new Error("Empty");
+        JSON.parse(raw);
+        return;
+      } catch {}
+      await saveStatusUnlocked({
+        updatedAt: null, timezone: TIMEZONE_OFFSET, totalonline: 0,
+        services: {}, announcements: [], incidents: [], sections: [],
+        globalUptime: { daily: [], weekly: [], monthly: [], yearly: [] },
+      });
+    });
   }
 }
 
@@ -532,10 +552,14 @@ async function loadStatus() {
   return JSON.parse(await fs.readFile(STATUS_FILE, "utf8"));
 }
 
-async function saveStatus(data) {
-  const tmp = STATUS_FILE + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, STATUS_FILE);
+async function saveStatusUnlocked(data) {
+  const tmp = tempPath(STATUS_FILE);
+  try {
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, STATUS_FILE);
+  } finally {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -643,6 +667,10 @@ const SYSTEMIC_FAIL_RATIO  = 0.6;
 const SYSTEMIC_FAIL_CYCLES = 3;
 
 async function runCheck(sections, forceAll = false) {
+  return withFileLock(STATUS_FILE, () => runCheckUnlocked(sections, forceAll));
+}
+
+async function runCheckUnlocked(sections, forceAll = false) {
   // Before running checks, verify if the server has internet access. If not, skip service checks to avoid false down alerts.
   const hasInternet = await checkInternet();
   if (!hasInternet) {
@@ -727,7 +755,8 @@ async function runCheck(sections, forceAll = false) {
       store.services[service.id] ??= {
         id: service.id, name: service.name, sectionId: service.sectionId,
         icon: service.icon ?? null, status: "maintenance",
-        currentHour: null, hourlyHistory: [], dailyHistory: [],
+      currentHour: null, hourlyHistory: [], dailyHistory: [],
+      downtimeMs: 0, lastCheckAt: null,
       };
       const msvc = store.services[service.id];
       msvc.sectionId = service.sectionId;
@@ -769,6 +798,19 @@ async function runCheck(sections, forceAll = false) {
     svc.keywordMode = service.keywordMode ?? "contains";
     svc.timeout    = service.timeout ?? null;
     if (service.icon) svc.icon = service.icon;
+
+    // Count only intervals for which the service was actually observed down.
+    // Recovery/monitoring checks never add time, so confirmation stability
+    // cannot inflate a one-interval outage into a multi-minute outage.
+    const configuredIntervalMs = Math.max(1_000, Number(service.checkInterval ?? 60) * 1_000);
+    const elapsedSinceLastCheck = svc.lastCheckAt ? now - new Date(svc.lastCheckAt).getTime() : configuredIntervalMs;
+    const detectionIntervalMs = Math.max(1_000, Math.min(configuredIntervalMs, Number.isFinite(elapsedSinceLastCheck) ? elapsedSinceLastCheck : configuredIntervalMs));
+    let countedDowntimeMs = 0;
+    if (result.status === "down") {
+      countedDowntimeMs = detectionIntervalMs;
+      svc.downtimeMs = (svc.downtimeMs ?? 0) + countedDowntimeMs;
+    }
+    svc.lastCheckAt = timestamp;
 
     // Debug mode per service: saves the detailed reason of the last check
     if (service.debug) {
@@ -850,6 +892,7 @@ async function runCheck(sections, forceAll = false) {
 
     /* ── Estado actual ── */
     const prevStatus = svc.status;
+    let shouldShowDown = result.status === "down";
     const recent     = svc.currentHour.checks.slice(-10);
     const ups        = recent.filter(c => c.status === "up").length;
     const newStatus  = isNew ? "up" : (ups > recent.length / 2 ? "up" : "down");
@@ -889,6 +932,8 @@ async function runCheck(sections, forceAll = false) {
             // Don't count this check against uptime — it's a suspected false alarm.
             const last = svc.currentHour.checks[svc.currentHour.checks.length - 1];
             if (last && last.status === "down") last.status = "up";
+            svc.downtimeMs = Math.max(0, (svc.downtimeMs ?? 0) - countedDowntimeMs);
+            shouldShowDown = false;
           } else {
             // handleServiceDown makes confirmatory checks internally (2×5s, or 4×10s for DNS-classified failures)
             const opened = await handleServiceDown(store, service, result);
@@ -896,15 +941,22 @@ async function runCheck(sections, forceAll = false) {
               // False positive: the service recovered during confirmatory checks. Mark the last check as "up" to avoid false downtime.
               const last = svc.currentHour.checks[svc.currentHour.checks.length - 1];
               if (last && last.status === "down") last.status = "up";
+              svc.downtimeMs = Math.max(0, (svc.downtimeMs ?? 0) - countedDowntimeMs);
+              shouldShowDown = false;
             }
           }
-        } else if (inMonitoring) {
-          const inc = store.incidents.find(i => i.serviceId === service.id && !i.resolvedAt);
-          if (inc && (inc.stableCount ?? 0) > 0) {
-            inc.stableCount = 0;
-            info(`[Incidents] 🔴 ${service.id} — Was down again in monitoring, restarting countdown.`);
+          } else if (inMonitoring) {
+            const inc = store.incidents.find(i => i.serviceId === service.id && !i.resolvedAt);
+            if (inc) {
+              inc.downtimeMs = (inc.downtimeMs ?? 0) + countedDowntimeMs;
+              inc.stableCount = 0;
+              inc.status = "investigating";
+              inc.updates.push({ at: timestamp, status: "investigating", message: "Service went down again during monitoring. Counting a new outage interval." });
+              info(`[Incidents] 🔴 ${service.id} — Was down again in monitoring, restarting countdown.`);
+            }
+          } else if (hasOpenIncident) {
+            hasOpenIncident.downtimeMs = (hasOpenIncident.downtimeMs ?? 0) + countedDowntimeMs;
           }
-        }
         // If inMaintenance: ignore, the admin will close the incident manually
       } else {
         if (hasOpenIncident && !inMonitoring && !inMaintenance) {
@@ -914,6 +966,17 @@ async function runCheck(sections, forceAll = false) {
         }
         // If inMaintenance: ignore recovery, the admin will close the incident manually
       }
+    }
+
+    // Monitoring is a recovery-confirmation state, not an outage state. It is
+    // deliberately kept distinct from "down" so the UI and any consumers of
+    // status.json never treat its confirmation window as additional downtime.
+    if (shouldShowDown) {
+      svc.status = "down";
+    } else if (hasOpenIncident?.status === "monitoring") {
+      svc.status = "monitoring";
+    } else if (result.status === "up") {
+      svc.status = "up";
     }
   }
 
@@ -930,7 +993,7 @@ async function runCheck(sections, forceAll = false) {
 
   updateGlobalUptime(store, todayKey, store.totalonline);
 
-  await saveStatus(store);
+  await saveStatusUnlocked(store);
   info(`[uptime] ✓ Check complete — Total online: ${store.totalonline}%`);
 
   if (httpChecked >= 2 && (networkErrors / httpChecked) >= SYSTEMIC_FAIL_RATIO) {

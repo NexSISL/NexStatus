@@ -9,6 +9,7 @@ import crypto    from "crypto";
 import dotenv   from "dotenv";
 import { pingService } from "./utils/checkers.js";
 import { info, success, error, warn } from "./utils/console.js";
+import { withFileLock, tempPath } from "./utils/file-lock.js";
 
 dotenv.config();
 
@@ -84,6 +85,71 @@ async function writeEnv(updates) {
   const tmp = ENV_FILE + ".tmp";
   await fs.writeFile(tmp, lines.filter((l, i) => i === 0 || l.trim() !== "" || lines[i - 1]?.trim() !== "").join("\n") + "\n");
   await fs.rename(tmp, ENV_FILE);
+}
+
+/* ═══════════════════════════════════════════
+   ADMIN JWT SESSIONS
+═══════════════════════════════════════════ */
+
+function base64url(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function getJwtSecret() {
+  return process.env.JWT_SECRET || null;
+}
+
+function signAdminJwt(claims) {
+  const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = base64url(JSON.stringify(claims));
+  const input = `${header}.${payload}`;
+  const signature = crypto.createHmac("sha256", getJwtSecret()).update(input).digest("base64url");
+  return `${input}.${signature}`;
+}
+
+function issueAdminJwt(req) {
+  const now = Math.floor(Date.now() / 1000);
+  return signAdminJwt({
+    iss: "nexstatus",
+    aud: "nexstatus-admin",
+    sub: "admin",
+    jti: crypto.randomUUID(),
+    iat: now,
+    exp: now + 8 * 60 * 60,
+    // A fresh identifier makes every browser login/session unique without
+    // binding tokens to an IP that may legitimately change.
+    cid: crypto.createHash("sha256").update(`${req.headers["user-agent"] ?? "unknown"}:${crypto.randomUUID()}`).digest("hex").slice(0, 24),
+  });
+}
+
+function verifyAdminJwt(token) {
+  if (!getJwtSecret() || typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [encodedHeader, encodedPayload, signature] = parts;
+  const expected = crypto.createHmac("sha256", getJwtSecret()).update(`${encodedHeader}.${encodedPayload}`).digest("base64url");
+  const actualBuf = Buffer.from(signature);
+  const expectedBuf = Buffer.from(expected);
+  if (actualBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(actualBuf, expectedBuf)) return null;
+  try {
+    const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    const now = Math.floor(Date.now() / 1000);
+    if (header.alg !== "HS256" || header.typ !== "JWT" || payload.iss !== "nexstatus" || payload.aud !== "nexstatus-admin" || payload.sub !== "admin" || !payload.jti || !payload.exp || payload.exp <= now) return null;
+    return payload;
+  } catch { return null; }
+}
+
+function safeEqualText(a, b) {
+  const left = Buffer.from(String(a ?? ""));
+  const right = Buffer.from(String(b ?? ""));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+
+function formatIncidentDowntime(ms) {
+  const minutes = Math.max(0, Math.round(Number(ms ?? 0) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
 
 /* ═══════════════════════════════════════════
@@ -331,7 +397,7 @@ app.use(cors({
       }
     : true,
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "x-admin-token"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
 app.use(express.json({ limit: "64kb" }));
@@ -376,10 +442,27 @@ async function readJson(file) {
   return JSON.parse(await fs.readFile(file, "utf8"));
 }
 
+async function writeJsonUnlocked(file, data) {
+  const tmp = tempPath(file);
+  try {
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, file);
+  } finally {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
+}
+
 async function writeJson(file, data) {
-  const tmp = file + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, file);
+  await withFileLock(file, () => writeJsonUnlocked(file, data));
+}
+
+async function updateStatus(mutator) {
+  return withFileLock(STATUS_FILE, async () => {
+    const store = await readJson(STATUS_FILE);
+    const result = await mutator(store);
+    await writeJsonUnlocked(STATUS_FILE, store);
+    return result;
+  });
 }
 
 function getAdminToken() {
@@ -535,10 +618,7 @@ async function editDiscordEmbed(incident, update, serviceName) {
   ];
 
   if (incident.updates?.length > 1) {
-    const ms = new Date(update.at) - new Date(incident.createdAt);
-    const m  = Math.floor(ms / 60_000);
-    const h  = Math.floor(m / 60);
-    fields.push({ name: "Duration", value: h > 0 ? `${h}h ${m % 60}m` : `${m}m`, inline: false });
+    fields.push({ name: "Downtime", value: formatIncidentDowntime(incident.downtimeMs), inline: false });
   }
 
   const embed = {
@@ -605,7 +685,7 @@ function verifyTotp(secret, userCode, window = 1) {
     const offset = hmac[hmac.length - 1] & 0x0f;
     const valid  = ((hmac.readUInt32BE(offset) & 0x7fffffff) % Math.pow(10, digits))
                     .toString().padStart(digits, "0");
-    if (crypto.timingSafeEqual(Buffer.from(valid), Buffer.from(String(userCode).trim().padStart(digits, "0")))) {
+    if (safeEqualText(valid, String(userCode).trim().padStart(digits, "0"))) {
       return true;
     }
   }
@@ -617,14 +697,10 @@ function verifyTotp(secret, userCode, window = 1) {
 ═══════════════════════════════════════════ */
 
 function adminAuth(req, res, next) {
-  const token = String(req.headers["x-admin-token"] ?? "").trim();
-  const valid = String(getAdminToken() ?? "").trim();
-  if (!valid) return res.status(500).json({ error: "Admin token not configured" });
-  const tokenBuf = Buffer.from(token, "utf8");
-  const validBuf = Buffer.from(valid, "utf8");
-  if (!token || tokenBuf.length !== validBuf.length || !crypto.timingSafeEqual(tokenBuf, validBuf)) {
-    return res.status(401).json({ error: "Invalid or missing token" });
-  }
+  if (!getAdminToken() || !getJwtSecret()) return res.status(500).json({ error: "Admin authentication is not configured" });
+  const header = String(req.headers.authorization ?? "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match || !verifyAdminJwt(match[1])) return res.status(401).json({ error: "Invalid or expired session" });
   next();
 }
 
@@ -638,13 +714,24 @@ function isValidId(id) {
 
 function isValidUrl(url) {
   if (typeof url !== "string" || url.length > 512) return false;
+  const safeHost = /^[A-Za-z0-9.-]+$/.test(url.replace(/^(?:ping|dns):\/\//, ""));
+  if (/^(?:ping|dns):\/\//.test(url)) return safeHost;
+  if (/^(?:tcp|udp):\/\//.test(url)) return /^(?:tcp|udp):\/\/[A-Za-z0-9.-]+:\d{1,5}$/.test(url);
   try {
     const u = new URL(url);
-    return ["http:", "https:", "tcp:"].includes(u.protocol) ||
-           /^tcp:\/\/[\w.-]+:\d+$/.test(url);
+    return ["http:", "https:"].includes(u.protocol) && !!u.hostname && !/[<>"'`;$()|&\\\s]/.test(url);
   } catch {
     return /^[\w.-]+:\d{1,5}$/.test(url);
   }
+}
+
+function isValidServiceConfig(service) {
+  if (!service || typeof service !== "object") return false;
+  if (["ping", "dns"].includes(service.checkType)) {
+    const host = String(service.url ?? "").replace(/^(?:ping|dns):\/\//, "");
+    return /^[A-Za-z0-9.:%-]+$/.test(host) && !/[.]{2}|^[-.]|[-.]$/.test(host);
+  }
+  return isValidUrl(service.url);
 }
 
 /* ═══════════════════════════════════════════
@@ -730,23 +817,19 @@ app.post("/admin/api/setup", authLimiter, async (req, res) => {
     return res.status(400).json({ error: "adminToken must be at least 16 characters" });
   }
 
-  const updates = { ADMIN_TOKEN: adminToken };
+  const updates = { ADMIN_TOKEN: adminToken, JWT_SECRET: crypto.randomBytes(32).toString("hex") };
   if (totpSecret?.trim()) updates.TOTP_SECRET = totpSecret.trim().toUpperCase();
-  await writeEnv(updates);
-
   if (Array.isArray(sections)) {
     for (const s of sections) {
       if (!isValidId(s.id) || typeof s.name !== "string" || !Array.isArray(s.services)) {
         return res.status(400).json({ error: `Invalid section: ${s.id}` });
       }
       for (const svc of s.services) {
-        if (!isValidId(svc.id) || typeof svc.name !== "string" || !isValidUrl(svc.url)) {
+        if (!isValidId(svc.id) || typeof svc.name !== "string" || !isValidServiceConfig(svc)) {
           return res.status(400).json({ error: `Invalid service: ${svc.id}` });
         }
       }
     }
-    await writeJson(SERVICES_FILE, { sections });
-    try { await fs.writeFile(FORCE_CHECK_FILE, "1"); } catch {}
   }
 
   if (appearance && typeof appearance === "object") {
@@ -782,11 +865,22 @@ app.post("/admin/api/setup", authLimiter, async (req, res) => {
     if (appearance.texts !== undefined && (typeof appearance.texts !== "object" || Array.isArray(appearance.texts))) {
       return res.status(400).json({ error: "Invalid texts" });
     }
+  }
+
+  // Commit configuration only after every input has passed validation. This
+  // keeps a failed first-run setup retryable instead of leaving a half-setup.
+  await writeEnv(updates);
+  if (Array.isArray(sections)) {
+    await writeJson(SERVICES_FILE, { sections });
+    try { await fs.writeFile(FORCE_CHECK_FILE, "1"); } catch {}
+  }
+  if (appearance && typeof appearance === "object") {
     await writeJson(APPEARANCE_FILE, normalizeAppearance({ ...DEFAULT_APPEARANCE, ...appearance }));
     await regenerateIndexHtml();
   }
 
-  res.json({ ok: true });
+  const setupHasTotp = Boolean((updates.TOTP_SECRET ?? process.env.TOTP_SECRET ?? "").trim());
+  res.json({ ok: true, sessionToken: setupHasTotp ? null : issueAdminJwt(req), requiresLogin: setupHasTotp });
 });
 
 app.get("/admin/api/setup/status", (_req, res) => {
@@ -803,15 +897,15 @@ app.post("/admin/api/auth", authLimiter, async (req, res) => {
   if (!adminToken) return res.status(500).json({ ok: false, error: "Server not configured correctly" });
 
   if (totpSecret) {
-    const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
+    const tokenOk = safeEqualText(token, adminToken);
     const totpOk  = code && verifyTotp(totpSecret, String(code).trim());
     if (!tokenOk) return res.status(401).json({ ok: false, error: "Incorrect password" });
     if (!totpOk)  return res.status(401).json({ ok: false, error: "Invalid TOTP code" });
-    return res.json({ ok: true });
+    return res.json({ ok: true, sessionToken: issueAdminJwt(req), expiresIn: 8 * 60 * 60 });
   }
 
-  const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
-  if (tokenOk) return res.json({ ok: true });
+  const tokenOk = safeEqualText(token, adminToken);
+  if (tokenOk) return res.json({ ok: true, sessionToken: issueAdminJwt(req), expiresIn: 8 * 60 * 60 });
   res.status(401).json({ ok: false, error: "Incorrect password" });
 });
 
@@ -835,20 +929,9 @@ app.post("/admin/api/force-check", adminLimiter, adminAuth, async (_req, res) =>
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
-// Manual detector restart — requires password re-confirmation (+TOTP if configured),
-// same check used by /admin/api/auth, since this kills a running process.
+// Manual detector restart — the already authenticated JWT authorizes this
+// action; no password is sent again over the network.
 app.post("/admin/api/detector/restart", adminLimiter, adminAuth, async (req, res) => {
-  const { token, code } = req.body ?? {};
-  const adminToken = getAdminToken();
-  const totpSecret = process.env.TOTP_SECRET ?? null;
-
-  const tokenOk = token && crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(adminToken));
-  if (!tokenOk) return res.status(401).json({ ok: false, error: "Incorrect password" });
-  if (totpSecret) {
-    const totpOk = code && verifyTotp(totpSecret, String(code).trim());
-    if (!totpOk) return res.status(401).json({ ok: false, error: "Invalid TOTP code" });
-  }
-
   try {
     if (detector && !detector.killed) {
       detectorManualStop = true;
@@ -878,33 +961,29 @@ app.post("/admin/api/services/:id/reset-stats", adminLimiter, adminAuth, async (
   if (from && isNaN(fromDate?.getTime())) return res.status(400).json({ error: "Invalid 'from' date" });
 
   try {
-    const store = await readJson(STATUS_FILE);
-    const svc = store.services?.[id];
-    if (!svc) return res.status(404).json({ error: "Service not found" });
-
     const fromIso  = fromDate ? fromDate.toISOString() : null;
     const fromDate0 = fromDate ? `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}` : null;
-
-    if (fromIso) {
-      svc.hourlyHistory = (svc.hourlyHistory ?? []).filter(h => h.hour < fromIso);
-      svc.dailyHistory  = (svc.dailyHistory  ?? []).filter(d => d.date < fromDate0);
-      if (svc.currentHour && svc.currentHour.startedAt >= fromIso) {
-        svc.currentHour = null;
-      } else if (svc.currentHour) {
-        svc.currentHour.checks = svc.currentHour.checks.filter(c => c.at < fromIso);
+    const found = await updateStatus(store => {
+      const svc = store.services?.[id];
+      if (!svc) return false;
+      if (fromIso) {
+        svc.hourlyHistory = (svc.hourlyHistory ?? []).filter(h => h.hour < fromIso);
+        svc.dailyHistory  = (svc.dailyHistory  ?? []).filter(d => d.date < fromDate0);
+        if (svc.currentHour && svc.currentHour.startedAt >= fromIso) svc.currentHour = null;
+        else if (svc.currentHour) svc.currentHour.checks = svc.currentHour.checks.filter(c => c.at < fromIso);
+      } else {
+        svc.hourlyHistory = [];
+        svc.dailyHistory  = [];
+        svc.currentHour   = null;
       }
-    } else {
-      // No cutoff = full reset to fresh state (100% uptime, empty history)
-      svc.hourlyHistory = [];
-      svc.dailyHistory  = [];
-      svc.currentHour   = null;
-    }
-
-    svc.onlineper = 100;
-    svc.history   = svc.dailyHistory.map(d => ({ date: d.date, onlineper: d.onlineper }));
-    svc.status    = "up";
-
-    await writeJson(STATUS_FILE, store);
+      svc.onlineper = 100;
+      svc.history   = svc.dailyHistory.map(d => ({ date: d.date, onlineper: d.onlineper }));
+      svc.status    = "up";
+      svc.downtimeMs = 0;
+      svc.lastCheckAt = null;
+      return true;
+    });
+    if (!found) return res.status(404).json({ error: "Service not found" });
     info(`[Admin] Stats reset for ${id}${fromIso ? ` from ${fromIso}` : " (full reset)"}`);
     res.json({ ok: true });
   } catch (err) {
@@ -915,7 +994,7 @@ app.post("/admin/api/services/:id/reset-stats", adminLimiter, adminAuth, async (
 // Tests a service config without saving it or affecting stats — validates before applying.
 app.post("/admin/api/test-check", adminLimiter, adminAuth, async (req, res) => {
   const svc = req.body;
-  if (!svc?.url) return res.status(400).json({ error: "url is required" });
+  if (!svc?.url || !isValidServiceConfig(svc)) return res.status(400).json({ error: "Invalid monitor configuration" });
   try {
     const result = await pingService(svc);
     res.json(result);
@@ -941,27 +1020,28 @@ app.post("/admin/api/announcements", adminLimiter, adminAuth, async (req, res) =
   if (typeof title !== "string" || title.length > 256) return res.status(400).json({ error: "Invalid or too long title" });
   if (endsAt && isNaN(new Date(endsAt).getTime())) return res.status(400).json({ error: "endsAt is not a valid date" });
 
-  const store = await readJson(STATUS_FILE);
-  store.announcements ??= [];
   const ann = {
     id: `ann-${Date.now()}`, type,
     title: String(title).trim(),
     body:  typeof body === "string" ? body.trim() : "",
     endsAt: endsAt ?? null, createdAt: new Date().toISOString(), manual: true,
   };
-  store.announcements.push(ann);
-  await writeJson(STATUS_FILE, store);
+  await updateStatus(store => {
+    store.announcements ??= [];
+    store.announcements.push(ann);
+  });
   res.json(ann);
 });
 
 app.delete("/admin/api/announcements/:id", adminLimiter, adminAuth, async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) return res.status(400).json({ error: "Invalid ID" });
-  const store = await readJson(STATUS_FILE);
-  const before = (store.announcements ?? []).length;
-  store.announcements = (store.announcements ?? []).filter(a => a.id !== id);
-  if (store.announcements.length === before) return res.status(404).json({ error: "Announcement not found" });
-  await writeJson(STATUS_FILE, store);
+  const removed = await updateStatus(store => {
+    const before = (store.announcements ?? []).length;
+    store.announcements = (store.announcements ?? []).filter(a => a.id !== id);
+    return store.announcements.length !== before;
+  });
+  if (!removed) return res.status(404).json({ error: "Announcement not found" });
   res.json({ ok: true });
 });
 
@@ -983,31 +1063,30 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
   if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
   if (serviceId && !isValidId(serviceId)) return res.status(400).json({ error: "Invalid serviceId" });
 
-  const store      = await readJson(STATUS_FILE);
   const now        = new Date().toISOString();
   const incidentId = `inc-${Date.now()}`;
-
-  store.incidents    ??= [];
-  store.announcements ??= [];
 
   const incident = {
     id: incidentId, serviceId: serviceId ?? null,
     serviceName: typeof serviceName === "string" ? serviceName.trim().slice(0, 128) : null,
     title: title.trim(), status, automatic: false, createdAt: now, resolvedAt: null,
     discordMessageId: null,
+    downtimeMs: 0,
     updates: [{ at: now, status, message: typeof message === "string" ? message.trim() : "Incident created manually." }],
   };
 
-  store.incidents.push(incident);
-  store.announcements.push({
-    id: `ann-${incidentId}`,
-    type: status === "maintenance" ? "maintenance" : "incident",
-    title: incident.title,
-    body: typeof message === "string" ? message.trim() : "",
-    incidentId, serviceId: serviceId ?? null, createdAt: now, endsAt: null, manual: true,
+  await updateStatus(store => {
+    store.incidents    ??= [];
+    store.announcements ??= [];
+    store.incidents.push(incident);
+    store.announcements.push({
+      id: `ann-${incidentId}`,
+      type: status === "maintenance" ? "maintenance" : "incident",
+      title: incident.title,
+      body: typeof message === "string" ? message.trim() : "",
+      incidentId, serviceId: serviceId ?? null, createdAt: now, endsAt: null, manual: true,
+    });
   });
-
-  await writeJson(STATUS_FILE, store);
 
   // Try to send initial embed to Discord (manual incident)
   const token     = process.env.DISCORD_BOT_TOKEN;
@@ -1037,9 +1116,10 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
         if (dmsg?.id) {
           incident.discordMessageId = dmsg.id;
           // Re-save with messageId
-          const fresh = await readJson(STATUS_FILE);
-          const inc = fresh.incidents?.find(i => i.id === incidentId);
-          if (inc) { inc.discordMessageId = dmsg.id; await writeJson(STATUS_FILE, fresh); }
+          await updateStatus(store => {
+            const inc = store.incidents?.find(i => i.id === incidentId);
+            if (inc) inc.discordMessageId = dmsg.id;
+          });
           info(`[discord] 📨 Embed sent for manual incident ${incidentId} (msg: ${dmsg.id})`);
         }
       }
@@ -1063,24 +1143,24 @@ app.post("/admin/api/incidents/:id/updates", adminLimiter, adminAuth, async (req
   const VALID_STATUSES = ["investigating", "identified", "monitoring", "resolved", "maintenance"];
   if (status && !VALID_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
 
-  const store = await readJson(STATUS_FILE);
-  const inc   = (store.incidents ?? []).find(i => i.id === id);
-  if (!inc) return res.status(404).json({ error: "Incident not found" });
-
   const now = new Date().toISOString();
-  const update = { at: now, status: status ?? inc.status, message: message.trim() };
-  inc.updates.push(update);
-  if (status) inc.status = status;
-
-  if (status === "resolved" && !inc.resolvedAt) {
-    inc.resolvedAt = now;
-    store.announcements = (store.announcements ?? []).filter(a => a.incidentId !== inc.id);
-  }
-
-  const ann = (store.announcements ?? []).find(a => a.incidentId === inc.id);
-  if (ann && message) ann.body = message.trim();
-
-  await writeJson(STATUS_FILE, store);
+  let inc;
+  let update;
+  const found = await updateStatus(store => {
+    inc = (store.incidents ?? []).find(i => i.id === id);
+    if (!inc) return false;
+    update = { at: now, status: status ?? inc.status, message: message.trim() };
+    inc.updates.push(update);
+    if (status) inc.status = status;
+    if (status === "resolved" && !inc.resolvedAt) {
+      inc.resolvedAt = now;
+      store.announcements = (store.announcements ?? []).filter(a => a.incidentId !== inc.id);
+    }
+    const ann = (store.announcements ?? []).find(a => a.incidentId === inc.id);
+    if (ann && message) ann.body = message.trim();
+    return true;
+  });
+  if (!found) return res.status(404).json({ error: "Incident not found" });
 
   // Editar embed de Discord con el nuevo comentario
   await editDiscordEmbed(inc, update, inc.serviceName);
@@ -1091,12 +1171,13 @@ app.post("/admin/api/incidents/:id/updates", adminLimiter, adminAuth, async (req
 app.delete("/admin/api/incidents/:id", adminLimiter, adminAuth, async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) return res.status(400).json({ error: "Invalid ID" });
-  const store = await readJson(STATUS_FILE);
-  const before = (store.incidents ?? []).length;
-  store.incidents     = (store.incidents     ?? []).filter(i => i.id !== id);
-  store.announcements = (store.announcements ?? []).filter(a => a.incidentId !== id);
-  if (store.incidents.length === before) return res.status(404).json({ error: "Incident not found" });
-  await writeJson(STATUS_FILE, store);
+  const removed = await updateStatus(store => {
+    const before = (store.incidents ?? []).length;
+    store.incidents     = (store.incidents     ?? []).filter(i => i.id !== id);
+    store.announcements = (store.announcements ?? []).filter(a => a.incidentId !== id);
+    return store.incidents.length !== before;
+  });
+  if (!removed) return res.status(404).json({ error: "Incident not found" });
   res.json({ ok: true });
 });
 
@@ -1121,7 +1202,7 @@ app.put("/admin/api/services", adminLimiter, adminAuth, async (req, res) => {
       if (!isValidId(svc.id) || typeof svc.name !== "string" || !svc.url) {
         return res.status(400).json({ error: `Invalid service in section ${s.id}: ${svc.id}` });
       }
-      if (!isValidUrl(svc.url)) {
+      if (!isValidServiceConfig(svc)) {
         return res.status(400).json({ error: `Invalid URL for service ${svc.id}: ${svc.url}` });
       }
     }
@@ -1167,7 +1248,11 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   if (discordChannelId)                              updates.DISCORD_CHANNEL_ID = discordChannelId;
   if (discordStatusChannelId)                        updates.DISCORD_STATUS_CHANNEL_ID = discordStatusChannelId;
   if (discordStatusServices !== undefined)          updates.DISCORD_STATUS_SERVICES = discordStatusServices;
-  if (adminToken)                                    updates.ADMIN_TOKEN = adminToken;
+  if (adminToken) {
+    updates.ADMIN_TOKEN = adminToken;
+    // Password rotation invalidates every issued JWT immediately.
+    updates.JWT_SECRET = crypto.randomBytes(32).toString("hex");
+  }
   if (discordBotToken && !discordBotToken.includes("…")) updates.DISCORD_BOT_TOKEN = discordBotToken;
   if (totpSecret?.trim())                            updates.TOTP_SECRET = totpSecret.trim().toUpperCase();
 
@@ -1288,6 +1373,10 @@ app.use((err, _req, res, _next) => {
 
 (async () => {
   await loadEnv();
+  if (process.env.ADMIN_TOKEN && !process.env.JWT_SECRET) {
+    await writeEnv({ JWT_SECRET: crypto.randomBytes(32).toString("hex") });
+    info("[Auth] Generated JWT_SECRET for existing installation");
+  }
   await regenerateIndexHtml();
   if (process.env.DISCORD_BOT_TOKEN) {
     await verifyBotToken(process.env.DISCORD_BOT_TOKEN);

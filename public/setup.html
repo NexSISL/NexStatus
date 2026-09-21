@@ -419,8 +419,12 @@ async function finishSetup() {
     });
     const data = await res.json();
     if (!data.ok) { showError(data.error ?? "Error saving."); btn.disabled = false; btn.textContent = "Finish"; return; }
-    sessionStorage.setItem("nexora_admin_token", payload.adminToken);
-    window.location.replace("/admin");
+    if (data.sessionToken) {
+      sessionStorage.setItem("nexora_admin_session", data.sessionToken);
+      window.location.replace("/admin");
+    } else {
+      window.location.replace("/login");
+    }
   } catch {
     showError("Connection error.");
     btn.disabled = false;
