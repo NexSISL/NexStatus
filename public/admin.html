@@ -738,6 +738,45 @@
               <input class="form-input" type="text" id="cfg-discord-status-channel" placeholder="123456789012345678"/>
               <div class="form-hint">Channel where the system status embed is sent.</div>
             </div>
+            <div class="form-group">
+              <label class="form-label">Current status message ID</label>
+              <input class="form-input" type="text" id="cfg-discord-status-message-id" readonly placeholder="No status embed created yet"/>
+              <div class="form-hint">Saved automatically and reused after restarts.</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Bot presence</label>
+              <select class="form-select" id="cfg-discord-presence-status">
+                <option value="online">Online</option>
+                <option value="dnd">Do Not Disturb</option>
+                <option value="idle">Idle / Away</option>
+                <option value="invisible">Invisible</option>
+              </select>
+              <div class="form-hint">The bot remains connected to Discord to maintain this status.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Activity type</label>
+              <select class="form-select" id="cfg-discord-presence-activity-type">
+                <option value="none">No activity</option>
+                <option value="playing">Playing</option>
+                <option value="streaming">Streaming</option>
+                <option value="listening">Listening to</option>
+                <option value="watching">Watching</option>
+                <option value="competing">Competing in</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Activity text</label>
+              <input class="form-input" type="text" id="cfg-discord-presence-activity-name" maxlength="128" placeholder="e.g. monitoring NexStatus"/>
+            </div>
+            <div class="form-group" id="cfg-discord-presence-stream-url-group">
+              <label class="form-label">Streaming URL</label>
+              <input class="form-input" type="url" id="cfg-discord-presence-stream-url" maxlength="512" placeholder="https://twitch.tv/your-channel"/>
+              <div class="form-hint">Required by Discord when the activity is Streaming.</div>
+            </div>
           </div>
           <div class="form-group" style="margin-bottom:12px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -2240,6 +2279,12 @@ async function loadSettings() {
     sectionsData = servicesResp.sections ?? [];
     document.getElementById("cfg-discord-channel").value = cfg.discordChannelId ?? "";
     document.getElementById("cfg-discord-status-channel").value = cfg.discordStatusChannelId ?? "";
+    document.getElementById("cfg-discord-status-message-id").value = cfg.discordStatusMessageId ?? "";
+    document.getElementById("cfg-discord-presence-status").value = cfg.discordPresenceStatus ?? "online";
+    document.getElementById("cfg-discord-presence-activity-type").value = cfg.discordPresenceActivityType ?? "none";
+    document.getElementById("cfg-discord-presence-activity-name").value = cfg.discordPresenceActivityName ?? "";
+    document.getElementById("cfg-discord-presence-stream-url").value = cfg.discordPresenceStreamUrl ?? "";
+    updateDiscordPresenceForm();
     const services = getAvailableDiscordServices();
     const selectedIds = (cfg.discordStatusServices || "")
       .split(",")
@@ -2255,7 +2300,8 @@ async function loadSettings() {
 
     const statusEl = document.getElementById("discord-status");
     if (cfg.discordBotToken) {
-      statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Token saved (${esc(cfg.discordBotToken)})`;
+      const gateway = cfg.presenceState?.connected ? "Presence connected" : "Presence reconnecting";
+      statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);"></i> Token saved (${esc(cfg.discordBotToken)}) · ${gateway}`;
     } else {
       statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color:var(--danger);"></i> No token configured`;
     }
@@ -2297,6 +2343,14 @@ async function loadSettings() {
     showToast("Error loading configuration", "error");
   }
 }
+
+function updateDiscordPresenceForm() {
+  const type = document.getElementById("cfg-discord-presence-activity-type")?.value;
+  const streamUrlGroup = document.getElementById("cfg-discord-presence-stream-url-group");
+  if (streamUrlGroup) streamUrlGroup.style.display = type === "streaming" ? "block" : "none";
+}
+
+document.getElementById("cfg-discord-presence-activity-type").addEventListener("change", updateDiscordPresenceForm);
 
 document.getElementById("ap-bg-type").addEventListener("change", e => {
   const isSolid = e.target.value === "solid";
@@ -2361,6 +2415,10 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
   const discordBotToken        = document.getElementById("cfg-discord-token").value.trim();
   const discordChannelId       = document.getElementById("cfg-discord-channel").value.trim();
   const discordStatusChannelId = document.getElementById("cfg-discord-status-channel").value.trim();
+  const discordPresenceStatus = document.getElementById("cfg-discord-presence-status").value;
+  const discordPresenceActivityType = document.getElementById("cfg-discord-presence-activity-type").value;
+  const discordPresenceActivityName = document.getElementById("cfg-discord-presence-activity-name").value.trim();
+  const discordPresenceStreamUrl = document.getElementById("cfg-discord-presence-stream-url").value.trim();
   const adminToken             = document.getElementById("cfg-admin-token").value.trim();
   const totpSecret             = document.getElementById("cfg-totp-secret")?.value.trim() ?? "";
   const discordStatusServices  = discordStatusSelection.map(s => s.id).join(",");
@@ -2376,6 +2434,10 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
       discordChannelId:       discordChannelId       || undefined,
       discordStatusChannelId: discordStatusChannelId || undefined,
       discordStatusServices:  discordStatusServices,
+      discordPresenceStatus,
+      discordPresenceActivityType,
+      discordPresenceActivityName,
+      discordPresenceStreamUrl,
       adminToken:             adminToken             || undefined,
       totpSecret:             totpSecret             || undefined,
     });

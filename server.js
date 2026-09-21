@@ -7,6 +7,7 @@ import { spawn } from "child_process";
 import cors      from "cors";
 import crypto    from "crypto";
 import dotenv   from "dotenv";
+import WebSocket from "ws";
 import { pingService } from "./utils/checkers.js";
 import { info, success, error, warn } from "./utils/console.js";
 import { withFileLock, tempPath } from "./utils/file-lock.js";
@@ -477,15 +478,162 @@ function getAdminToken() {
 ═══════════════════════════════════════════ */
 
 const botState = { verified: false, username: null, lastCheck: null };
+const presenceState = { connected: false, status: "online", activityType: "none", activityName: "", lastConnected: null, lastError: null };
 const DISCORD_STATUS_STATE_FILE = path.join(DATA_DIR, "discord-status.json");
 const DISCORD_API_BASE = (process.env.DISCORD_API_BASE || "https://discord.com/api/v10").replace(/\/+$/, "");
 const BOT_RETRY_INTERVAL_MS = 30_000;
+const GATEWAY_RETRY_INTERVAL_MS = 10_000;
+const PRESENCE_STATUSES = new Set(["online", "dnd", "idle", "invisible"]);
+const PRESENCE_ACTIVITY_TYPES = { none: null, playing: 0, streaming: 1, listening: 2, watching: 3, competing: 5 };
 let _statusMessageId = null;
 let _statusMessageChannelId = null;
 let _statusWatchDebounce = null;
 let _statusEmbedInFlight = null;
 let _statusRetryTimer = null;
 let _lastBotVerificationAttempt = 0;
+let _gatewaySocket = null;
+let _gatewayHeartbeatTimer = null;
+let _gatewayRetryTimer = null;
+let _gatewaySequence = null;
+
+function configuredPresence() {
+  const status = PRESENCE_STATUSES.has(process.env.DISCORD_PRESENCE_STATUS)
+    ? process.env.DISCORD_PRESENCE_STATUS
+    : "online";
+  const activityType = Object.hasOwn(PRESENCE_ACTIVITY_TYPES, process.env.DISCORD_PRESENCE_ACTIVITY_TYPE)
+    ? process.env.DISCORD_PRESENCE_ACTIVITY_TYPE
+    : "none";
+  const activityName = String(process.env.DISCORD_PRESENCE_ACTIVITY_NAME ?? "").trim().slice(0, 128);
+  const streamingUrl = String(process.env.DISCORD_PRESENCE_STREAM_URL ?? "").trim();
+  const activity = activityType !== "none" && activityName
+    ? { name: activityName, type: PRESENCE_ACTIVITY_TYPES[activityType] }
+    : null;
+  if (activityType === "streaming" && activity && isValidStreamingUrl(streamingUrl)) activity.url = streamingUrl;
+  return { status, activityType, activityName, streamingUrl, activities: activity ? [activity] : [] };
+}
+
+function isValidStreamingUrl(value) {
+  if (typeof value !== "string" || value.length > 512) return false;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function updatePresenceState() {
+  const presence = configuredPresence();
+  presenceState.status = presence.status;
+  presenceState.activityType = presence.activityType;
+  presenceState.activityName = presence.activityName;
+  return presence;
+}
+
+function sendGatewayPayload(op, data) {
+  if (_gatewaySocket?.readyState !== WebSocket.OPEN) return false;
+  _gatewaySocket.send(JSON.stringify({ op, d: data }));
+  return true;
+}
+
+function clearGatewayHeartbeat() {
+  if (_gatewayHeartbeatTimer) clearInterval(_gatewayHeartbeatTimer);
+  _gatewayHeartbeatTimer = null;
+}
+
+function scheduleGatewayReconnect() {
+  if (_gatewayRetryTimer || !process.env.DISCORD_BOT_TOKEN) return;
+  _gatewayRetryTimer = setTimeout(() => {
+    _gatewayRetryTimer = null;
+    connectDiscordGateway();
+  }, GATEWAY_RETRY_INTERVAL_MS);
+  _gatewayRetryTimer.unref?.();
+}
+
+function closeDiscordGateway() {
+  clearGatewayHeartbeat();
+  if (_gatewayRetryTimer) clearTimeout(_gatewayRetryTimer);
+  _gatewayRetryTimer = null;
+  const socket = _gatewaySocket;
+  _gatewaySocket = null;
+  presenceState.connected = false;
+  if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "Configuration changed");
+}
+
+function connectDiscordGateway() {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token || _gatewaySocket) return;
+  if (_gatewayRetryTimer) clearTimeout(_gatewayRetryTimer);
+  _gatewayRetryTimer = null;
+  const gatewayUrl = process.env.DISCORD_GATEWAY_URL || "wss://gateway.discord.gg/?v=10&encoding=json";
+  let socket;
+  try {
+    socket = new WebSocket(gatewayUrl);
+  } catch (err) {
+    presenceState.lastError = err.message;
+    scheduleGatewayReconnect();
+    return;
+  }
+  _gatewaySocket = socket;
+  _gatewaySequence = null;
+
+  socket.on("message", raw => {
+    let payload;
+    try { payload = JSON.parse(raw.toString()); } catch { return; }
+    if (payload.s !== null && payload.s !== undefined) _gatewaySequence = payload.s;
+    if (payload.op === 10) {
+      clearGatewayHeartbeat();
+      const interval = Number(payload.d?.heartbeat_interval);
+      if (!Number.isFinite(interval) || interval <= 0) {
+        presenceState.lastError = "Gateway sent an invalid heartbeat interval";
+        socket.close();
+        return;
+      }
+      const heartbeat = () => sendGatewayPayload(1, _gatewaySequence);
+      heartbeat();
+      _gatewayHeartbeatTimer = setInterval(heartbeat, interval);
+      _gatewayHeartbeatTimer.unref?.();
+      const presence = updatePresenceState();
+      sendGatewayPayload(2, {
+        token,
+        intents: 0,
+        properties: { os: process.platform, browser: "NexStatus", device: "NexStatus" },
+        presence: { since: null, activities: presence.activities, status: presence.status, afk: false },
+      });
+      return;
+    }
+    if (payload.op === 0 && payload.t === "READY") {
+      presenceState.connected = true;
+      presenceState.lastConnected = new Date().toISOString();
+      presenceState.lastError = null;
+      const presence = updatePresenceState();
+      sendGatewayPayload(3, { since: null, activities: presence.activities, status: presence.status, afk: false });
+      return;
+    }
+    if (payload.op === 7 || payload.op === 9) socket.close();
+  });
+
+  socket.on("close", (code, reason) => {
+    if (_gatewaySocket !== socket) return;
+    _gatewaySocket = null;
+    clearGatewayHeartbeat();
+    presenceState.connected = false;
+    presenceState.lastError = `Gateway closed (${code}${reason.length ? `: ${reason.toString()}` : ""})`;
+    if (![4004, 4010, 4011, 4012, 4013, 4014].includes(code)) scheduleGatewayReconnect();
+  });
+  socket.on("error", err => {
+    if (_gatewaySocket === socket) presenceState.lastError = err.message;
+  });
+}
+
+function applyDiscordPresence() {
+  const presence = updatePresenceState();
+  if (presenceState.connected && sendGatewayPayload(3, { since: null, activities: presence.activities, status: presence.status, afk: false })) {
+    return { ok: true, connected: true };
+  }
+  connectDiscordGateway();
+  return { ok: true, connected: false };
+}
 
 function discordApiUrl(endpoint) {
   return `${DISCORD_API_BASE}${endpoint}`;
@@ -1361,16 +1509,26 @@ app.get("/admin/api/settings", adminLimiter, adminAuth, async (_req, res) => {
     discordChannelId:      process.env.DISCORD_CHANNEL_ID ?? "",
     discordStatusChannelId: process.env.DISCORD_STATUS_CHANNEL_ID ?? "",
     discordStatusServices: process.env.DISCORD_STATUS_SERVICES ?? "",
+    discordStatusMessageId: _statusMessageChannelId === process.env.DISCORD_STATUS_CHANNEL_ID ? _statusMessageId : null,
+    discordPresenceStatus: configuredPresence().status,
+    discordPresenceActivityType: configuredPresence().activityType,
+    discordPresenceActivityName: configuredPresence().activityName,
+    discordPresenceStreamUrl: configuredPresence().streamingUrl,
     hasAdminToken:         !!(process.env.ADMIN_TOKEN),
     hasTotpSecret:         !!(process.env.TOTP_SECRET),
     totpSecretHint:        process.env.TOTP_SECRET ? `${process.env.TOTP_SECRET.slice(0, 4)}…` : "",
     botState,
+    presenceState,
     appearance:            await readAppearance(),
   });
 });
 
 app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
-  const { discordBotToken, discordChannelId, discordStatusChannelId, discordStatusServices, adminToken, totpSecret } = req.body;
+  const {
+    discordBotToken, discordChannelId, discordStatusChannelId, discordStatusServices,
+    discordPresenceStatus, discordPresenceActivityType, discordPresenceActivityName, discordPresenceStreamUrl,
+    adminToken, totpSecret,
+  } = req.body;
   const statusChannelChanged = Boolean(discordStatusChannelId && discordStatusChannelId !== process.env.DISCORD_STATUS_CHANNEL_ID);
   const hasBotTokenUpdate = Boolean(discordBotToken && !discordBotToken.includes("…"));
 
@@ -1380,6 +1538,25 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   if (discordStatusChannelId && !/^\d{1,25}$/.test(discordStatusChannelId)) {
     return res.status(400).json({ error: "Invalid discordStatusChannelId" });
   }
+  const nextPresenceStatus = discordPresenceStatus ?? configuredPresence().status;
+  const nextActivityType = discordPresenceActivityType ?? configuredPresence().activityType;
+  const nextActivityName = discordPresenceActivityName ?? configuredPresence().activityName;
+  const nextStreamUrl = discordPresenceStreamUrl ?? configuredPresence().streamingUrl;
+  if (!PRESENCE_STATUSES.has(nextPresenceStatus)) {
+    return res.status(400).json({ error: "Invalid Discord presence status" });
+  }
+  if (!Object.hasOwn(PRESENCE_ACTIVITY_TYPES, nextActivityType)) {
+    return res.status(400).json({ error: "Invalid Discord presence activity type" });
+  }
+  if (typeof nextActivityName !== "string" || nextActivityName.trim().length > 128) {
+    return res.status(400).json({ error: "Discord presence activity must be at most 128 characters" });
+  }
+  if (nextActivityType !== "none" && !nextActivityName.trim()) {
+    return res.status(400).json({ error: "Discord presence activity text is required" });
+  }
+  if (nextActivityType === "streaming" && !isValidStreamingUrl(nextStreamUrl)) {
+    return res.status(400).json({ error: "A valid streaming URL is required" });
+  }
   if (adminToken && IS_PROD && adminToken.length < 16) {
     return res.status(400).json({ error: "adminToken must be at least 16 characters" });
   }
@@ -1388,6 +1565,10 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   if (discordChannelId)                              updates.DISCORD_CHANNEL_ID = discordChannelId;
   if (discordStatusChannelId)                        updates.DISCORD_STATUS_CHANNEL_ID = discordStatusChannelId;
   if (discordStatusServices !== undefined)          updates.DISCORD_STATUS_SERVICES = discordStatusServices;
+  if (discordPresenceStatus !== undefined)          updates.DISCORD_PRESENCE_STATUS = nextPresenceStatus;
+  if (discordPresenceActivityType !== undefined)    updates.DISCORD_PRESENCE_ACTIVITY_TYPE = nextActivityType;
+  if (discordPresenceActivityName !== undefined)    updates.DISCORD_PRESENCE_ACTIVITY_NAME = nextActivityName.trim();
+  if (discordPresenceStreamUrl !== undefined)       updates.DISCORD_PRESENCE_STREAM_URL = nextStreamUrl.trim();
   if (adminToken) {
     updates.ADMIN_TOKEN = adminToken;
     // Password rotation invalidates every issued JWT immediately.
@@ -1404,7 +1585,14 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   }
   if (hasBotTokenUpdate) {
     _lastBotVerificationAttempt = Date.now();
-    await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
+    const verification = await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
+    if (verification.ok) {
+      closeDiscordGateway();
+      connectDiscordGateway();
+    }
+  }
+  if (!hasBotTokenUpdate && (discordPresenceStatus !== undefined || discordPresenceActivityType !== undefined || discordPresenceActivityName !== undefined || discordPresenceStreamUrl !== undefined)) {
+    applyDiscordPresence();
   }
   if (statusChannelChanged || hasBotTokenUpdate) {
     void sendStatusEmbed();
@@ -1416,7 +1604,11 @@ app.post("/admin/api/discord/reload", adminLimiter, adminAuth, async (_req, res)
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) return res.status(400).json({ error: "No Discord token configured" });
   const result = await verifyBotToken(token);
-  if (result.ok) return res.json({ ok: true, username: result.username });
+  if (result.ok) {
+    closeDiscordGateway();
+    connectDiscordGateway();
+    return res.json({ ok: true, username: result.username });
+  }
   return res.status(502).json({ error: result.error || `Estado ${result.status}` });
 });
 
@@ -1531,7 +1723,8 @@ app.use((err, _req, res, _next) => {
   await loadStatusMessageState();
   if (process.env.DISCORD_BOT_TOKEN) {
     _lastBotVerificationAttempt = Date.now();
-    await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
+    const verification = await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
+    if (verification.ok) connectDiscordGateway();
   }
   watchStatusFile();
 
@@ -1546,6 +1739,7 @@ app.use((err, _req, res, _next) => {
 
 function shutdown(signal) {
   info(`\n[Server] Shutting down (${signal})...`);
+  closeDiscordGateway();
   detectorManualStop = true;
   if (detector && !detector.killed) {
     detector.kill("SIGTERM");

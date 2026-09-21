@@ -8,6 +8,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
+import { WebSocketServer } from "ws";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testRoot = path.join(projectRoot, "tmp-test");
@@ -18,6 +19,9 @@ let serverOutput = "";
 let currentJwt;
 let discordServer;
 let discordApiBase;
+let discordGatewayServer;
+let discordGatewayUrl;
+const gatewayPayloads = [];
 const discord = {
   inaccessible: false,
   messages: new Map(),
@@ -132,6 +136,21 @@ async function startDiscordMock() {
   });
 }
 
+async function startDiscordGatewayMock() {
+  const port = await reservePort();
+  discordGatewayUrl = `ws://127.0.0.1:${port}/?v=10&encoding=json`;
+  discordGatewayServer = new WebSocketServer({ host: "127.0.0.1", port });
+  discordGatewayServer.on("connection", socket => {
+    socket.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 1_000 } }));
+    socket.on("message", raw => {
+      const payload = JSON.parse(raw.toString());
+      gatewayPayloads.push(payload);
+      if (payload.op === 2) socket.send(JSON.stringify({ op: 0, t: "READY", d: { v: 10 } }));
+    });
+  });
+  await once(discordGatewayServer, "listening");
+}
+
 async function startNexStatusServer() {
   const port = await reservePort();
   baseUrl = `http://127.0.0.1:${port}`;
@@ -149,6 +168,7 @@ async function startNexStatusServer() {
     NEXSTATUS_ENV_FILE: path.join(testDirectory, ".env"),
     NEXSTATUS_INDEX_OUTPUT_FILE: path.join(testDirectory, "index.html"),
     DISCORD_API_BASE: discordApiBase,
+    DISCORD_GATEWAY_URL: discordGatewayUrl,
   };
   server = spawn(process.execPath, ["server.js"], { cwd: projectRoot, env });
   server.stdout.on("data", chunk => { serverOutput += chunk; });
@@ -167,6 +187,7 @@ before(async () => {
   await mkdir(testRoot, { recursive: true });
   testDirectory = await mkdtemp(path.join(testRoot, "run-"));
   await startDiscordMock();
+  await startDiscordGatewayMock();
   await startNexStatusServer();
 });
 
@@ -174,6 +195,9 @@ after(async () => {
   await stopNexStatusServer();
   if (discordServer?.listening) {
     await new Promise(resolve => discordServer.close(resolve));
+  }
+  if (discordGatewayServer) {
+    await new Promise(resolve => discordGatewayServer.close(resolve));
   }
   await rm(testDirectory, { recursive: true, force: true });
 });
@@ -273,10 +297,21 @@ test("Discord status embed uses one durable message and only replaces a confirme
   let result = await request("/admin/api/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentJwt}` },
-    body: JSON.stringify({ discordBotToken: "test-bot-token", discordStatusChannelId: "123456789" }),
+    body: JSON.stringify({
+      discordBotToken: "test-bot-token",
+      discordStatusChannelId: "123456789",
+      discordPresenceStatus: "dnd",
+      discordPresenceActivityType: "streaming",
+      discordPresenceActivityName: "NexStatus Live",
+      discordPresenceStreamUrl: "https://twitch.tv/nexstatus",
+    }),
   });
   assert.equal(result.response.status, 200);
   await waitForCondition(() => discord.posts === 1, "the initial status embed was not created");
+  await waitForCondition(() => gatewayPayloads.some(p => p.op === 2), "the Gateway did not receive Identify");
+  const identify = gatewayPayloads.find(p => p.op === 2);
+  assert.equal(identify.d.presence.status, "dnd");
+  assert.deepEqual(identify.d.presence.activities, [{ name: "NexStatus Live", type: 1, url: "https://twitch.tv/nexstatus" }]);
 
   result = await request("/admin/api/discord/send-status", {
     method: "POST",
@@ -290,6 +325,26 @@ test("Discord status embed uses one durable message and only replaces a confirme
   const originalId = saved.messageId;
   assert.equal(saved.channelId, "123456789");
   assert.ok(originalId);
+
+  result = await request("/admin/api/settings", { headers: { Authorization: `Bearer ${currentJwt}` } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.discordStatusMessageId, originalId, "settings exposes the currently tracked status message ID");
+
+  result = await request("/admin/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentJwt}` },
+    body: JSON.stringify({
+      discordPresenceStatus: "idle",
+      discordPresenceActivityType: "watching",
+      discordPresenceActivityName: "NexStatus monitors",
+      discordPresenceStreamUrl: "",
+    }),
+  });
+  assert.equal(result.response.status, 200);
+  await waitForCondition(
+    () => gatewayPayloads.some(p => p.op === 3 && p.d.status === "idle"),
+    "the Gateway did not receive the updated presence",
+  );
 
   const patchesBeforeRestart = discord.patches;
   await stopNexStatusServer();
