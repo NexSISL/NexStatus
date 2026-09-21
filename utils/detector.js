@@ -26,12 +26,13 @@ import { withFileLock, tempPath } from "./file-lock.js";
 
 const BASE_INTERVAL_MS  = 60_000;
 const TIMEZONE_OFFSET   = -6;
-const FORCE_CHECK_FILE  = path.resolve(process.cwd(), "data", "force_check");
-const FORCE_CONFIG_RELOAD_FILE = path.resolve(process.cwd(), "data", "force_config_reload");
 const EMBED_DELAY_MS    = 1_500; // delay between embeds when multiple services go down
 
-const DATA_DIR      = path.resolve(process.cwd(), "data");
+const DATA_DIR      = process.env.NEXSTATUS_DATA_DIR ? path.resolve(process.env.NEXSTATUS_DATA_DIR) : path.resolve(process.cwd(), "data");
+const FORCE_CHECK_FILE  = path.join(DATA_DIR, "force_check");
+const FORCE_CONFIG_RELOAD_FILE = path.join(DATA_DIR, "force_config_reload");
 const APPEARANCE_FILE = path.join(DATA_DIR, "appearance.json");
+const ENV_FILE = process.env.NEXSTATUS_ENV_FILE ? path.resolve(process.env.NEXSTATUS_ENV_FILE) : path.resolve(process.cwd(), ".env");
 
 // Editable Discord embed footer — see server.js normalizeAppearance for the same defaults
 const DEFAULT_EMBED_TEXTS = { "embed-footer": "{site} Status" };
@@ -66,7 +67,7 @@ const INTERNET_CHECK_HOSTS = [
 
 async function loadEnv() {
   try {
-    const raw = await fs.readFile(path.resolve(process.cwd(), ".env"), "utf8");
+    const raw = await fs.readFile(ENV_FILE, "utf8");
     for (const line of raw.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;

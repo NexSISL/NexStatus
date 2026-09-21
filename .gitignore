@@ -6,3 +6,4 @@ data/*.json
 data/*.lock
 data/force_check
 data/force_config_reload
+tmp-test/

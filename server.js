@@ -11,7 +11,9 @@ import { pingService } from "./utils/checkers.js";
 import { info, success, error, warn } from "./utils/console.js";
 import { withFileLock, tempPath } from "./utils/file-lock.js";
 
-dotenv.config();
+// Tests can point dotenv at an isolated file before this module starts. In a
+// normal run, dotenv keeps its standard working-directory behavior.
+dotenv.config({ path: process.env.NEXSTATUS_ENV_FILE || undefined });
 
 const app  = express();
 const PORT = process.env.PORT || 3015;
@@ -20,13 +22,13 @@ const IS_PROD = process.env.NODE_ENV === "production";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-const DATA_DIR              = path.join(__dirname, "data");
+const DATA_DIR              = process.env.NEXSTATUS_DATA_DIR ? path.resolve(process.env.NEXSTATUS_DATA_DIR) : path.join(__dirname, "data");
 const STATUS_FILE           = path.join(DATA_DIR, "status.json");
 const SERVICES_FILE         = path.join(DATA_DIR, "services.json");
 const FORCE_CHECK_FILE      = path.join(DATA_DIR, "force_check");
 const FORCE_CONFIG_RELOAD_FILE = path.join(DATA_DIR, "force_config_reload");
 const APPEARANCE_FILE       = path.join(DATA_DIR, "appearance.json");
-const ENV_FILE              = path.join(__dirname, ".env");
+const ENV_FILE              = process.env.NEXSTATUS_ENV_FILE ? path.resolve(process.env.NEXSTATUS_ENV_FILE) : path.join(__dirname, ".env");
 
 /* ═══════════════════════════════════════════
    CARGA DE .env
@@ -235,7 +237,7 @@ function embedText(appearance, key, vars = {}) {
 ═══════════════════════════════════════════ */
 
 const INDEX_TEMPLATE_FILE = path.join(__dirname, "templates", "index.template.html");
-const INDEX_OUTPUT_FILE   = path.join(__dirname, "public", "index.html");
+const INDEX_OUTPUT_FILE   = process.env.NEXSTATUS_INDEX_OUTPUT_FILE ? path.resolve(process.env.NEXSTATUS_INDEX_OUTPUT_FILE) : path.join(__dirname, "public", "index.html");
 const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%2338bdf8'/%3E%3C/svg%3E";
 
 function esc(s) {
