@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -14,6 +15,17 @@ let server;
 let testDirectory;
 let baseUrl;
 let serverOutput = "";
+let currentJwt;
+let discordServer;
+let discordApiBase;
+const discord = {
+  inaccessible: false,
+  messages: new Map(),
+  nextId: 1,
+  posts: 0,
+  patches: 0,
+  gets: 0,
+};
 
 function reservePort() {
   return new Promise((resolve, reject) => {
@@ -40,6 +52,15 @@ async function waitForServer() {
     await sleep(50);
   }
   throw new Error(`Test server did not start:\n${serverOutput}`);
+}
+
+async function waitForCondition(condition, message) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await sleep(25);
+  }
+  throw new Error(message);
 }
 
 async function request(pathname, options = {}) {
@@ -70,9 +91,48 @@ function currentTotp(secret) {
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
 
-before(async () => {
-  await mkdir(testRoot, { recursive: true });
-  testDirectory = await mkdtemp(path.join(testRoot, "run-"));
+function discordResponse(res, status, body) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
+async function startDiscordMock() {
+  const port = await reservePort();
+  discordApiBase = `http://127.0.0.1:${port}/api/v10`;
+  discordServer = http.createServer((req, res) => {
+    const pathname = new URL(req.url, discordApiBase).pathname;
+    if (req.method === "GET" && pathname === "/api/v10/users/@me") {
+      return discordResponse(res, 200, { id: "test-bot", username: "NexStatus Test Bot" });
+    }
+
+    const messageMatch = pathname.match(/^\/api\/v10\/channels\/([^/]+)\/messages\/([^/]+)$/);
+    const channelMatch = pathname.match(/^\/api\/v10\/channels\/([^/]+)\/messages$/);
+    if (messageMatch) {
+      const [, channelId, messageId] = messageMatch;
+      const key = `${channelId}:${messageId}`;
+      if (req.method === "GET") discord.gets += 1;
+      if (req.method === "PATCH") discord.patches += 1;
+      if (discord.inaccessible) return discordResponse(res, 403, { code: 50001, message: "Missing Access" });
+      if (!discord.messages.has(key)) return discordResponse(res, 404, { code: 10008, message: "Unknown Message" });
+      return discordResponse(res, 200, { id: messageId });
+    }
+    if (channelMatch && req.method === "POST") {
+      const channelId = channelMatch[1];
+      if (discord.inaccessible) return discordResponse(res, 403, { code: 50001, message: "Missing Access" });
+      const id = String(discord.nextId++);
+      discord.messages.set(`${channelId}:${id}`, { id });
+      discord.posts += 1;
+      return discordResponse(res, 200, { id });
+    }
+    return discordResponse(res, 404, { code: 0, message: "Unknown route" });
+  });
+  await new Promise((resolve, reject) => {
+    discordServer.once("error", reject);
+    discordServer.listen(port, "127.0.0.1", resolve);
+  });
+}
+
+async function startNexStatusServer() {
   const port = await reservePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const env = {
@@ -88,18 +148,32 @@ before(async () => {
     NEXSTATUS_DATA_DIR: path.join(testDirectory, "data"),
     NEXSTATUS_ENV_FILE: path.join(testDirectory, ".env"),
     NEXSTATUS_INDEX_OUTPUT_FILE: path.join(testDirectory, "index.html"),
+    DISCORD_API_BASE: discordApiBase,
   };
   server = spawn(process.execPath, ["server.js"], { cwd: projectRoot, env });
   server.stdout.on("data", chunk => { serverOutput += chunk; });
   server.stderr.on("data", chunk => { serverOutput += chunk; });
   await waitForServer();
+}
+
+async function stopNexStatusServer() {
+  if (!server || server.exitCode !== null) return;
+  server.kill("SIGTERM");
+  await Promise.race([once(server, "exit"), sleep(3_500)]);
+  if (server.exitCode === null) server.kill("SIGKILL");
+}
+
+before(async () => {
+  await mkdir(testRoot, { recursive: true });
+  testDirectory = await mkdtemp(path.join(testRoot, "run-"));
+  await startDiscordMock();
+  await startNexStatusServer();
 });
 
 after(async () => {
-  if (server && !server.killed) {
-    server.kill("SIGTERM");
-    await Promise.race([once(server, "exit"), sleep(3_500)]);
-    if (!server.killed) server.kill("SIGKILL");
+  await stopNexStatusServer();
+  if (discordServer?.listening) {
+    await new Promise(resolve => discordServer.close(resolve));
   }
   await rm(testDirectory, { recursive: true, force: true });
 });
@@ -192,4 +266,73 @@ test("admin APIs require a JWT, revoke on password rotation, and honor TOTP", { 
   });
   assert.equal(result.response.status, 200);
   assert.ok(result.body.sessionToken);
+  currentJwt = result.body.sessionToken;
+});
+
+test("Discord status embed uses one durable message and only replaces a confirmed deletion", { concurrency: false }, async () => {
+  let result = await request("/admin/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentJwt}` },
+    body: JSON.stringify({ discordBotToken: "test-bot-token", discordStatusChannelId: "123456789" }),
+  });
+  assert.equal(result.response.status, 200);
+  await waitForCondition(() => discord.posts === 1, "the initial status embed was not created");
+
+  result = await request("/admin/api/discord/send-status", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${currentJwt}` },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(discord.posts, 1, "updating must not create a second status message");
+  assert.ok(discord.patches >= 1);
+
+  let saved = JSON.parse(await readFile(path.join(testDirectory, "data", "discord-status.json"), "utf8"));
+  const originalId = saved.messageId;
+  assert.equal(saved.channelId, "123456789");
+  assert.ok(originalId);
+
+  const patchesBeforeRestart = discord.patches;
+  await stopNexStatusServer();
+  await startNexStatusServer();
+  result = await request("/admin/api/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "rotated-integration-password-456", code: currentTotp("JBSWY3DPEHPK3PXP") }),
+  });
+  assert.equal(result.response.status, 200);
+  currentJwt = result.body.sessionToken;
+  await waitForCondition(() => discord.patches > patchesBeforeRestart, "the restarted server did not update the saved status message");
+  assert.equal(discord.posts, 1, "a restart must reuse the persisted status message ID");
+
+  discord.messages.delete(`123456789:${originalId}`);
+  result = await request("/admin/api/discord/send-status", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${currentJwt}` },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(discord.posts, 2, "a confirmed Unknown Message response creates one replacement");
+
+  saved = JSON.parse(await readFile(path.join(testDirectory, "data", "discord-status.json"), "utf8"));
+  const replacementId = saved.messageId;
+  assert.notEqual(replacementId, originalId);
+
+  discord.inaccessible = true;
+  result = await request("/admin/api/discord/send-status", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${currentJwt}` },
+  });
+  assert.equal(result.response.status, 502);
+  assert.equal(result.body.reason, "message_unavailable");
+  assert.equal(discord.posts, 2, "a permissions failure must not create a duplicate");
+  saved = JSON.parse(await readFile(path.join(testDirectory, "data", "discord-status.json"), "utf8"));
+  assert.equal(saved.messageId, replacementId, "a permissions failure retains the tracked message ID");
+
+  discord.inaccessible = false;
+  result = await request("/admin/api/discord/send-status", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${currentJwt}` },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(discord.posts, 2, "access recovery edits the existing status message");
+  assert.ok(discord.messages.has(`123456789:${replacementId}`));
 });

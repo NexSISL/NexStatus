@@ -82,6 +82,7 @@ All variables live in `.env` in the project root. The setup wizard writes them f
 | `TOTP_SECRET` | ❌ | Base32 TOTP secret for 2FA on admin login |
 | `DISCORD_BOT_TOKEN` | ❌ | Bot token for Discord incident embeds |
 | `DISCORD_CHANNEL_ID` | ❌ | Channel ID where embeds are posted |
+| `DISCORD_STATUS_CHANNEL_ID` | ❌ | Channel for the single persistent status embed; its ID is saved automatically in `data/discord-status.json` |
 | `ALLOWED_ORIGINS` | ❌ | Comma-separated allowed CORS origins (e.g. `https://status.yourdomain.com`). If unset, CORS is open — set this in production. |
 | `TRUST_PROXY` | ❌ | Set to `1` if running behind nginx/Cloudflare to correctly read client IPs for rate limiting |
 

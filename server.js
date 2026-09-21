@@ -13,7 +13,8 @@ import { withFileLock, tempPath } from "./utils/file-lock.js";
 
 // Tests can point dotenv at an isolated file before this module starts. In a
 // normal run, dotenv keeps its standard working-directory behavior.
-dotenv.config({ path: process.env.NEXSTATUS_ENV_FILE || undefined });
+if (process.env.NEXSTATUS_ENV_FILE) dotenv.config({ path: process.env.NEXSTATUS_ENV_FILE });
+else dotenv.config();
 
 const app  = express();
 const PORT = process.env.PORT || 3015;
@@ -476,33 +477,151 @@ function getAdminToken() {
 ═══════════════════════════════════════════ */
 
 const botState = { verified: false, username: null, lastCheck: null };
-let _statusMessageId = process.env.DISCORD_STATUS_MESSAGE_ID ?? null;
+const DISCORD_STATUS_STATE_FILE = path.join(DATA_DIR, "discord-status.json");
+const DISCORD_API_BASE = (process.env.DISCORD_API_BASE || "https://discord.com/api/v10").replace(/\/+$/, "");
+const BOT_RETRY_INTERVAL_MS = 30_000;
+let _statusMessageId = null;
+let _statusMessageChannelId = null;
 let _statusWatchDebounce = null;
+let _statusEmbedInFlight = null;
+let _statusRetryTimer = null;
+let _lastBotVerificationAttempt = 0;
+
+function discordApiUrl(endpoint) {
+  return `${DISCORD_API_BASE}${endpoint}`;
+}
+
+async function discordFailure(response) {
+  const raw = await response.text();
+  try {
+    const body = JSON.parse(raw);
+    return { status: response.status, code: body.code ?? null, message: body.message ?? raw };
+  } catch {
+    return { status: response.status, code: null, message: raw };
+  }
+}
+
+async function loadStatusMessageState() {
+  const channelId = String(process.env.DISCORD_STATUS_CHANNEL_ID ?? "").trim();
+  _statusMessageId = null;
+  _statusMessageChannelId = channelId || null;
+  if (!channelId) return;
+
+  try {
+    const saved = await readJson(DISCORD_STATUS_STATE_FILE);
+    if (saved?.channelId === channelId && saved?.messageId) {
+      _statusMessageId = String(saved.messageId);
+      return;
+    }
+    // A state file exists but belongs to a different configured channel. Do
+    // not reuse its message ID there: it could point to an unrelated message.
+    if (saved?.channelId) return;
+  } catch {
+    // Migration path for installations that stored only the legacy .env ID.
+  }
+
+  const legacyId = String(process.env.DISCORD_STATUS_MESSAGE_ID ?? "").trim();
+  const legacyChannel = String(process.env.DISCORD_STATUS_MESSAGE_CHANNEL_ID ?? "").trim();
+  if (legacyId && (!legacyChannel || legacyChannel === channelId)) {
+    _statusMessageId = legacyId;
+    await persistStatusMessage(channelId, legacyId);
+  }
+}
+
+async function persistStatusMessage(channelId, messageId) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await writeJson(DISCORD_STATUS_STATE_FILE, { channelId, messageId, updatedAt: new Date().toISOString() });
+  _statusMessageChannelId = channelId;
+  _statusMessageId = messageId;
+  await writeEnv({
+    DISCORD_STATUS_MESSAGE_ID: messageId,
+    DISCORD_STATUS_MESSAGE_CHANNEL_ID: channelId,
+  });
+}
+
+async function clearStatusMessage(channelId) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await writeJson(DISCORD_STATUS_STATE_FILE, { channelId, messageId: null, updatedAt: new Date().toISOString() });
+  _statusMessageChannelId = channelId;
+  _statusMessageId = null;
+  await writeEnv({
+    DISCORD_STATUS_MESSAGE_ID: "",
+    DISCORD_STATUS_MESSAGE_CHANNEL_ID: channelId,
+  });
+}
 
 async function verifyBotToken(token) {
+  botState.lastCheck = new Date().toISOString();
   try {
-    const res = await fetch("https://discord.com/api/v10/users/@me", {
+    const res = await fetch(discordApiUrl("/users/@me"), {
       headers: { "Authorization": `Bot ${token}` },
     });
     if (res.ok) {
       const data = await res.json();
       botState.verified = true;
       botState.username = data.username;
-      botState.lastCheck = new Date().toISOString();
       return { ok: true, username: data.username };
     }
     botState.verified = false;
-    return { ok: false, status: res.status };
+    botState.username = null;
+    return { ok: false, ...(await discordFailure(res)) };
   } catch (e) {
     botState.verified = false;
+    botState.username = null;
     return { ok: false, error: e.message };
   }
 }
 
-async function sendStatusEmbed() {
+async function ensureStatusBotAvailable(token) {
+  if (botState.verified) return true;
+  const now = Date.now();
+  if (now - _lastBotVerificationAttempt < BOT_RETRY_INTERVAL_MS) return false;
+  _lastBotVerificationAttempt = now;
+  return (await verifyBotToken(token)).ok;
+}
+
+async function inspectStatusMessage(token, channelId, messageId) {
+  try {
+    const response = await fetch(discordApiUrl(`/channels/${channelId}/messages/${messageId}`), {
+      headers: { "Authorization": `Bot ${token}` },
+    });
+    if (response.ok) return { state: "exists" };
+    const failure = await discordFailure(response);
+    // 10008 is Discord's specific Unknown Message error. Other 404s, 403s,
+    // rate limits and transient failures must retain the saved message ID.
+    if (failure.status === 404 && failure.code === 10008) return { state: "missing", failure };
+    return { state: "unavailable", failure };
+  } catch (error) {
+    return { state: "unavailable", failure: { error: error.message } };
+  }
+}
+
+function scheduleStatusEmbedRetry(delay = BOT_RETRY_INTERVAL_MS) {
+  if (_statusRetryTimer || !process.env.DISCORD_BOT_TOKEN || !process.env.DISCORD_STATUS_CHANNEL_ID) return;
+  _statusRetryTimer = setTimeout(() => {
+    _statusRetryTimer = null;
+    void sendStatusEmbed();
+  }, delay);
+  _statusRetryTimer.unref?.();
+}
+
+function sendStatusEmbed() {
+  if (_statusEmbedInFlight) return _statusEmbedInFlight;
+  _statusEmbedInFlight = sendStatusEmbedInner().finally(() => { _statusEmbedInFlight = null; });
+  return _statusEmbedInFlight;
+}
+
+async function sendStatusEmbedInner() {
   const token = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_STATUS_CHANNEL_ID;
-  if (!token || !channelId || !botState.verified) return;
+  if (!token || !channelId) return { ok: false, reason: "not_configured" };
+  if (!await ensureStatusBotAvailable(token)) {
+    warn("[discord] Status embed deferred: bot token is not currently available; will retry.");
+    scheduleStatusEmbedRetry();
+    return { ok: false, reason: "bot_unavailable" };
+  }
+
+  if (_statusMessageChannelId !== channelId) await loadStatusMessageState();
 
   try {
     const [statusData, appearance] = await Promise.all([readJson(STATUS_FILE), readAppearance()]);
@@ -518,7 +637,7 @@ async function sendStatusEmbed() {
           .map(svcId => allServicesObj.find(s => s.id === svcId))
           .filter(Boolean);
 
-    const allUp = allServices.length > 0 && allServices.every(s => s.status === "up");
+    const allUp = allServices.length > 0 && allServices.every(s => ["up", "monitoring", "maintenance"].includes(s.status));
     const someDown = allServices.some(s => s.status === "down");
     const globalUp = statusData.totalonline != null
       ? Number(statusData.totalonline).toFixed(2)
@@ -530,7 +649,7 @@ async function sendStatusEmbed() {
     const embedTitle = embedText(appearance, "embed-status-title");
 
     const fields = allServices.map(svc => {
-      const icon = svc.status === "up" ? "🟢" : "🔴";
+      const icon = svc.status === "down" ? "🔴" : (svc.status === "monitoring" ? "🔵" : "🟢");
       const uptime = typeof svc.onlineper === "number" ? `${svc.onlineper.toFixed(2)}%` : "—";
       const lat = svc.latency != null ? `${svc.latency}ms` : "—";
       return { name: `${icon} ${svc.name}`, value: `📈 Uptime: \`${uptime}\`\n⚡ Latency: \`${lat}\``, inline: true };
@@ -549,34 +668,51 @@ async function sendStatusEmbed() {
     }));
 
     if (_statusMessageId) {
-      const editRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${_statusMessageId}`, {
+      const editRes = await fetch(discordApiUrl(`/channels/${channelId}/messages/${_statusMessageId}`), {
         method: "PATCH",
         headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ embeds }),
       });
       if (editRes.ok) {
         info("[discord] 📡 Status embed updated");
-        return;
+        return { ok: true, action: "updated", messageId: _statusMessageId };
       }
-      warn(`[discord] Could not edit message (${editRes.status}), creating new one`);
-      _statusMessageId = null;
+      const editFailure = await discordFailure(editRes);
+      const inspection = await inspectStatusMessage(token, channelId, _statusMessageId);
+      if (inspection.state !== "missing") {
+        if (inspection.failure?.status === 401) {
+          botState.verified = false;
+          botState.username = null;
+        }
+        const reason = inspection.failure?.code ?? inspection.failure?.status ?? editFailure.code ?? editFailure.status;
+        warn(`[discord] Status message edit failed (${reason}); preserving message ID and retrying later.`);
+        scheduleStatusEmbedRetry();
+        return { ok: false, reason: "message_unavailable", failure: inspection.failure ?? editFailure };
+      }
+      warn("[discord] Status message was confirmed deleted (10008); creating its replacement.");
+      await clearStatusMessage(channelId);
     }
 
-    const postRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    const postRes = await fetch(discordApiUrl(`/channels/${channelId}/messages`), {
       method: "POST",
       headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ embeds }),
     });
     if (postRes.ok) {
       const msg = await postRes.json();
-      _statusMessageId = msg.id;
-      await writeEnv({ DISCORD_STATUS_MESSAGE_ID: msg.id });
+      await persistStatusMessage(channelId, msg.id);
       info(`[discord] 📡 Status embed created: ${msg.id}`);
+      return { ok: true, action: "created", messageId: msg.id };
     } else {
-      warn(`[discord] ⚠ status embed: ${postRes.status} — ${await postRes.text()}`);
+      const failure = await discordFailure(postRes);
+      warn(`[discord] ⚠ status embed create failed (${failure.status}/${failure.code ?? "unknown"}): ${failure.message}`);
+      scheduleStatusEmbedRetry();
+      return { ok: false, reason: "create_failed", failure };
     }
   } catch (e) {
     warn("[discord] Error on sendStatusEmbed:", e.message);
+    scheduleStatusEmbedRetry();
+    return { ok: false, reason: "request_failed", failure: { message: e.message } };
   }
 }
 
@@ -584,7 +720,7 @@ function watchStatusFile() {
   fsSync.watchFile(STATUS_FILE, { interval: 5000, persistent: false }, (curr, prev) => {
     if (curr.mtimeMs === prev.mtimeMs) return;
     clearTimeout(_statusWatchDebounce);
-    _statusWatchDebounce = setTimeout(() => sendStatusEmbed(), 1500);
+    _statusWatchDebounce = setTimeout(() => void sendStatusEmbed(), 1500);
   });
   info("[discord] 👁 Watching status.json for auto-embed (polling 5s)");
 }
@@ -1235,6 +1371,8 @@ app.get("/admin/api/settings", adminLimiter, adminAuth, async (_req, res) => {
 
 app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
   const { discordBotToken, discordChannelId, discordStatusChannelId, discordStatusServices, adminToken, totpSecret } = req.body;
+  const statusChannelChanged = Boolean(discordStatusChannelId && discordStatusChannelId !== process.env.DISCORD_STATUS_CHANNEL_ID);
+  const hasBotTokenUpdate = Boolean(discordBotToken && !discordBotToken.includes("…"));
 
   if (discordChannelId && !/^\d{1,25}$/.test(discordChannelId)) {
     return res.status(400).json({ error: "Invalid discordChannelId" });
@@ -1255,12 +1393,21 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
     // Password rotation invalidates every issued JWT immediately.
     updates.JWT_SECRET = crypto.randomBytes(32).toString("hex");
   }
-  if (discordBotToken && !discordBotToken.includes("…")) updates.DISCORD_BOT_TOKEN = discordBotToken;
+  if (hasBotTokenUpdate) updates.DISCORD_BOT_TOKEN = discordBotToken;
   if (totpSecret?.trim())                            updates.TOTP_SECRET = totpSecret.trim().toUpperCase();
 
   await writeEnv(updates);
-  if (discordBotToken && !discordBotToken.includes("…")) {
-    await verifyBotToken(discordBotToken);
+  if (statusChannelChanged) {
+    // A message ID is only valid in its original channel. Keep the old
+    // message untouched, but make the new channel start with no tracked ID.
+    await clearStatusMessage(discordStatusChannelId);
+  }
+  if (hasBotTokenUpdate) {
+    _lastBotVerificationAttempt = Date.now();
+    await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
+  }
+  if (statusChannelChanged || hasBotTokenUpdate) {
+    void sendStatusEmbed();
   }
   res.json({ ok: true });
 });
@@ -1291,8 +1438,9 @@ app.post("/admin/api/discord/test", adminLimiter, adminAuth, async (_req, res) =
 
 app.post("/admin/api/discord/send-status", adminLimiter, adminAuth, async (_req, res) => {
   try {
-    await sendStatusEmbed();
-    res.json({ ok: true });
+    const result = await sendStatusEmbed();
+    if (result.ok) return res.json(result);
+    res.status(result.reason === "not_configured" ? 400 : 502).json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1380,18 +1528,19 @@ app.use((err, _req, res, _next) => {
     info("[Auth] Generated JWT_SECRET for existing installation");
   }
   await regenerateIndexHtml();
+  await loadStatusMessageState();
   if (process.env.DISCORD_BOT_TOKEN) {
+    _lastBotVerificationAttempt = Date.now();
     await verifyBotToken(process.env.DISCORD_BOT_TOKEN);
   }
-  try {
-    if (fsSync.existsSync(STATUS_FILE)) watchStatusFile();
-  } catch {}
+  watchStatusFile();
 
   app.listen(PORT, () => {
     info(`[Web Server] http://localhost:${PORT}`);
     info(`[Admin Panel] http://localhost:${PORT}/admin`);
     info(`[Login Page] http://localhost:${PORT}/login`);
     if (!IS_PROD) info("[Server] Development mode — extended logs active.");
+    void sendStatusEmbed();
   });
 })();
 
