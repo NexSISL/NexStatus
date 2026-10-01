@@ -18,6 +18,15 @@ if (process.env.NEXSTATUS_ENV_FILE) dotenv.config({ path: process.env.NEXSTATUS_
 else dotenv.config();
 
 const app  = express();
+
+// Express 4 does not catch rejected promises: forward them to the error handler
+// so a failing async route answers 500 instead of hanging.
+for (const method of ["get", "post", "put", "delete"]) {
+  const original = app[method].bind(app);
+  app[method] = (route, ...handlers) => handlers.length === 0
+    ? original(route)
+    : original(route, ...handlers.map(fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)));
+}
 const PORT = process.env.PORT || 3015;
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -54,7 +63,17 @@ async function loadEnv() {
   }
 }
 
-async function writeEnv(updates) {
+function writeEnv(updates) {
+  return withFileLock(ENV_FILE, () => writeEnvUnlocked(updates));
+}
+
+async function writeEnvUnlocked(updates) {
+  for (const [key, val] of Object.entries(updates)) {
+    if (val === undefined || val === null) continue;
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || /[\r\n"]/.test(String(val))) {
+      throw new Error(`Invalid value for ${key}`);
+    }
+  }
   let content = "";
   try {
     content = await fs.readFile(ENV_FILE, "utf8");
@@ -75,7 +94,7 @@ async function writeEnv(updates) {
   // Update or add keys
   for (const [key, val] of Object.entries(updates)) {
     if (val === undefined || val === null) continue;
-    const safeVal = String(val).includes(" ") ? `"${val}"` : val;
+    const safeVal = /[\s#]/.test(String(val)) ? `"${val}"` : val;
     const newLine = `${key}=${safeVal}`;
     if (existing.has(key)) {
       lines[existing.get(key)] = newLine;
@@ -189,6 +208,37 @@ const COLOR_FIELDS = [
   "mutedColor", "successColor", "dangerColor", "warningColor", "infoColor",
 ];
 
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+// Font name is interpolated into inline CSS and a Google Fonts URL: plain names only.
+function isValidFontFamily(v) {
+  return typeof v === "string" && /^[A-Za-z0-9 _-]{1,64}$/.test(v.trim());
+}
+
+function isValidAssetUrl(v) {
+  if (typeof v !== "string") return false;
+  const url = v.trim();
+  if (/^\/[\w./-]+$/.test(url)) return true;
+  return /^https?:\/\//i.test(url) && isValidUrl(url);
+}
+
+// Shared by first-run setup and PUT /admin/api/appearance. Returns an error message or null.
+function validateAppearance(body) {
+  if (body.backgroundType && !["image", "solid"].includes(body.backgroundType)) return "Invalid backgroundType";
+  for (const f of ["logoUrl", "faviconUrl", "backgroundImageUrl"]) {
+    if (body[f] && !isValidAssetUrl(body[f])) return `Invalid ${f}`;
+  }
+  for (const f of ["backgroundSolidColor", ...COLOR_FIELDS]) {
+    if (body[f] && !HEX_COLOR.test(body[f])) return `Invalid ${f}`;
+  }
+  if (body.siteTitle && (typeof body.siteTitle !== "string" || body.siteTitle.length > 128)) return "Invalid siteTitle";
+  if (body.footerText && (typeof body.footerText !== "string" || body.footerText.length > 256)) return "Invalid footerText";
+  if (body.fontFamily && !isValidFontFamily(body.fontFamily)) return "Invalid fontFamily";
+  if (body.language && body.language !== "es" && body.language !== "en") return "Invalid language";
+  if (body.texts !== undefined && (typeof body.texts !== "object" || body.texts === null || Array.isArray(body.texts))) return "Invalid texts";
+  return null;
+}
+
 function hexToRgbTriplet(hex) {
   const h = (hex || "").replace("#", "");
   return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)).join(" ");
@@ -204,11 +254,11 @@ function normalizeAppearance(input = {}) {
     logoUrl: typeof raw.logoUrl === "string" ? raw.logoUrl.trim() : "",
     faviconUrl: typeof raw.faviconUrl === "string" ? raw.faviconUrl.trim() : "",
     backgroundType: raw.backgroundType === "solid" ? "solid" : "image",
-    backgroundImageUrl: typeof raw.backgroundImageUrl === "string" ? raw.backgroundImageUrl.trim() : "",
+    backgroundImageUrl: isValidAssetUrl(raw.backgroundImageUrl) ? raw.backgroundImageUrl.trim() : "",
     backgroundSolidColor: /^#[0-9a-fA-F]{6}$/.test(raw.backgroundSolidColor ?? "") ? raw.backgroundSolidColor : DEFAULT_APPEARANCE.backgroundSolidColor,
     footerText: typeof raw.footerText === "string" ? raw.footerText : "",
-    fontFamily: typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily.trim() : DEFAULT_APPEARANCE.fontFamily,
-    language: raw.language === "en" ? "en" : "es",
+    fontFamily: isValidFontFamily(raw.fontFamily) ? raw.fontFamily.trim() : DEFAULT_APPEARANCE.fontFamily,
+    language: raw.language === "es" ? "es" : "en",
     texts,
   };
   for (const f of COLOR_FIELDS) {
@@ -283,7 +333,7 @@ async function regenerateIndexHtml() {
     const pageBg = appearance.backgroundType === "solid"
       ? `      --page-bg-image: none;\n      --page-bg-solid: ${esc(appearance.backgroundSolidColor)};`
       : appearance.backgroundImageUrl
-        ? `      --page-bg-image: url(${appearance.backgroundImageUrl});`
+        ? `      --page-bg-image: url("${esc(appearance.backgroundImageUrl)}");`
         : `      --page-bg-image: none;\n      --page-bg-solid: ${esc(appearance.backgroundSolidColor)};`;
 
     const inlineVars = [
@@ -635,6 +685,10 @@ function applyDiscordPresence() {
   return { ok: true, connected: false };
 }
 
+function discordFetch(url, init = {}) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+}
+
 function discordApiUrl(endpoint) {
   return `${DISCORD_API_BASE}${endpoint}`;
 }
@@ -701,7 +755,7 @@ async function clearStatusMessage(channelId) {
 async function verifyBotToken(token) {
   botState.lastCheck = new Date().toISOString();
   try {
-    const res = await fetch(discordApiUrl("/users/@me"), {
+    const res = await discordFetch(discordApiUrl("/users/@me"), {
       headers: { "Authorization": `Bot ${token}` },
     });
     if (res.ok) {
@@ -730,7 +784,7 @@ async function ensureStatusBotAvailable(token) {
 
 async function inspectStatusMessage(token, channelId, messageId) {
   try {
-    const response = await fetch(discordApiUrl(`/channels/${channelId}/messages/${messageId}`), {
+    const response = await discordFetch(discordApiUrl(`/channels/${channelId}/messages/${messageId}`), {
       headers: { "Authorization": `Bot ${token}` },
     });
     if (response.ok) return { state: "exists" };
@@ -816,7 +870,7 @@ async function sendStatusEmbedInner() {
     }));
 
     if (_statusMessageId) {
-      const editRes = await fetch(discordApiUrl(`/channels/${channelId}/messages/${_statusMessageId}`), {
+      const editRes = await discordFetch(discordApiUrl(`/channels/${channelId}/messages/${_statusMessageId}`), {
         method: "PATCH",
         headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ embeds }),
@@ -841,7 +895,7 @@ async function sendStatusEmbedInner() {
       await clearStatusMessage(channelId);
     }
 
-    const postRes = await fetch(discordApiUrl(`/channels/${channelId}/messages`), {
+    const postRes = await discordFetch(discordApiUrl(`/channels/${channelId}/messages`), {
       method: "POST",
       headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ embeds }),
@@ -917,8 +971,8 @@ async function editDiscordEmbed(incident, update, serviceName) {
   };
 
   try {
-    const res = await fetch(
-      `https://discord.com/api/v10/channels/${channelId}/messages/${incident.discordMessageId}`,
+    const res = await discordFetch(
+      discordApiUrl(`/channels/${channelId}/messages/${incident.discordMessageId}`),
       {
         method: "PATCH",
         headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
@@ -1119,38 +1173,8 @@ app.post("/admin/api/setup", authLimiter, async (req, res) => {
   }
 
   if (appearance && typeof appearance === "object") {
-    const VALID_BG = ["image", "solid"];
-    if (appearance.backgroundType && !VALID_BG.includes(appearance.backgroundType)) {
-      return res.status(400).json({ error: "Invalid backgroundType" });
-    }
-    for (const f of ["logoUrl", "faviconUrl", "backgroundImageUrl"]) {
-      if (appearance[f] && typeof appearance[f] !== "string") {
-        return res.status(400).json({ error: `Invalid ${f}` });
-      }
-    }
-    if (appearance.backgroundSolidColor && !/^#[0-9a-fA-F]{6}$/.test(appearance.backgroundSolidColor)) {
-      return res.status(400).json({ error: "Invalid backgroundSolidColor" });
-    }
-    for (const f of COLOR_FIELDS) {
-      if (appearance[f] && !/^#[0-9a-fA-F]{6}$/.test(appearance[f])) {
-        return res.status(400).json({ error: `Invalid ${f}` });
-      }
-    }
-    if (appearance.siteTitle && (typeof appearance.siteTitle !== "string" || appearance.siteTitle.length > 128)) {
-      return res.status(400).json({ error: "Invalid siteTitle" });
-    }
-    if (appearance.footerText && (typeof appearance.footerText !== "string" || appearance.footerText.length > 256)) {
-      return res.status(400).json({ error: "Invalid footerText" });
-    }
-    if (appearance.fontFamily && (typeof appearance.fontFamily !== "string" || appearance.fontFamily.length > 64)) {
-      return res.status(400).json({ error: "Invalid fontFamily" });
-    }
-    if (appearance.language && appearance.language !== "es" && appearance.language !== "en") {
-      return res.status(400).json({ error: "Invalid language" });
-    }
-    if (appearance.texts !== undefined && (typeof appearance.texts !== "object" || Array.isArray(appearance.texts))) {
-      return res.status(400).json({ error: "Invalid texts" });
-    }
+    const appearanceError = validateAppearance(appearance);
+    if (appearanceError) return res.status(400).json({ error: appearanceError });
   }
 
   // Commit configuration only after every input has passed validation. This
@@ -1307,7 +1331,7 @@ app.post("/admin/api/announcements", adminLimiter, adminAuth, async (req, res) =
   if (endsAt && isNaN(new Date(endsAt).getTime())) return res.status(400).json({ error: "endsAt is not a valid date" });
 
   const ann = {
-    id: `ann-${Date.now()}`, type,
+    id: `ann-${crypto.randomUUID()}`, type,
     title: String(title).trim(),
     body:  typeof body === "string" ? body.trim() : "",
     endsAt: endsAt ?? null, createdAt: new Date().toISOString(), manual: true,
@@ -1350,7 +1374,7 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
   if (serviceId && !isValidId(serviceId)) return res.status(400).json({ error: "Invalid serviceId" });
 
   const now        = new Date().toISOString();
-  const incidentId = `inc-${Date.now()}`;
+  const incidentId = `inc-${crypto.randomUUID()}`;
 
   const incident = {
     id: incidentId, serviceId: serviceId ?? null,
@@ -1382,7 +1406,7 @@ app.post("/admin/api/incidents", adminLimiter, adminAuth, async (req, res) => {
     const colors = { investigating: 0xef4444, identified: 0xf97316, monitoring: 0xf59e0b, resolved: 0x22c55e, maintenance: 0x3b82f6 };
     const statusLabels = { investigating: "🔍 Investigating", identified: "🔎 Identified", monitoring: "🟡 Monitoring", resolved: "✅ Resolved", maintenance: "🔧 Maintenance" };
     try {
-      const dres = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      const dres = await discordFetch(discordApiUrl(`/channels/${channelId}/messages`), {
         method: "POST",
         headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ embeds: [{
@@ -1529,6 +1553,11 @@ app.put("/admin/api/settings", adminLimiter, adminAuth, async (req, res) => {
     discordPresenceStatus, discordPresenceActivityType, discordPresenceActivityName, discordPresenceStreamUrl,
     adminToken, totpSecret,
   } = req.body;
+  for (const v of [discordBotToken, discordStatusServices, discordPresenceActivityName, discordPresenceStreamUrl, adminToken, totpSecret, discordChannelId, discordStatusChannelId]) {
+    if (v !== undefined && v !== null && (typeof v !== "string" || /[\r\n"]/.test(v))) {
+      return res.status(400).json({ error: "Invalid characters in settings" });
+    }
+  }
   const statusChannelChanged = Boolean(discordStatusChannelId && discordStatusChannelId !== process.env.DISCORD_STATUS_CHANNEL_ID);
   const hasBotTokenUpdate = Boolean(discordBotToken && !discordBotToken.includes("…"));
 
@@ -1616,7 +1645,7 @@ app.post("/admin/api/discord/test", adminLimiter, adminAuth, async (_req, res) =
   const token = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
   if (!token || !channelId) return res.status(400).json({ error: "Missing Discord credentials" });
-  const dres = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+  const dres = await discordFetch(discordApiUrl(`/channels/${channelId}/messages`), {
     method: "POST",
     headers: { "Authorization": `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ content: "🧪 Notification test of NexStatus" }),
@@ -1644,38 +1673,8 @@ app.post("/admin/api/discord/send-status", adminLimiter, adminAuth, async (_req,
 
 app.put("/admin/api/appearance", adminLimiter, adminAuth, async (req, res) => {
   const body = req.body ?? {};
-  const VALID_BG = ["image", "solid"];
-  if (body.backgroundType && !VALID_BG.includes(body.backgroundType)) {
-    return res.status(400).json({ error: "Invalid backgroundType" });
-  }
-  for (const f of ["logoUrl", "faviconUrl", "backgroundImageUrl"]) {
-    if (body[f] && !isValidUrl(body[f]) && !/^\/[\w./-]+$/.test(body[f])) {
-      return res.status(400).json({ error: `Invalid ${f}` });
-    }
-  }
-  if (body.backgroundSolidColor && !/^#[0-9a-fA-F]{6}$/.test(body.backgroundSolidColor)) {
-    return res.status(400).json({ error: "Invalid backgroundSolidColor" });
-  }
-  for (const f of COLOR_FIELDS) {
-    if (body[f] && !/^#[0-9a-fA-F]{6}$/.test(body[f])) {
-      return res.status(400).json({ error: `Invalid ${f}` });
-    }
-  }
-  if (body.siteTitle && (typeof body.siteTitle !== "string" || body.siteTitle.length > 128)) {
-    return res.status(400).json({ error: "Invalid siteTitle" });
-  }
-  if (body.footerText && (typeof body.footerText !== "string" || body.footerText.length > 256)) {
-    return res.status(400).json({ error: "Invalid footerText" });
-  }
-  if (body.fontFamily && (typeof body.fontFamily !== "string" || body.fontFamily.length > 64)) {
-    return res.status(400).json({ error: "Invalid fontFamily" });
-  }
-  if (body.language && body.language !== "es" && body.language !== "en") {
-    return res.status(400).json({ error: "Invalid language" });
-  }
-  if (body.texts !== undefined && (typeof body.texts !== "object" || Array.isArray(body.texts))) {
-    return res.status(400).json({ error: "Invalid texts" });
-  }
+  const appearanceError = validateAppearance(body);
+  if (appearanceError) return res.status(400).json({ error: appearanceError });
 
   const current = await readAppearance();
   const next    = normalizeAppearance({ ...current, ...body });
@@ -1695,7 +1694,10 @@ app.post("/admin/api/appearance/rebuild-index", adminLimiter, adminAuth, async (
    404
 ═══════════════════════════════════════════ */
 
-app.use((_req, res) => {
+app.use((req, res) => {
+  if (req.method !== "GET" || req.path.startsWith("/api/") || req.path.startsWith("/admin/api/")) {
+    return res.status(404).json({ error: "Not found" });
+  }
   res.status(404).sendFile(path.join(__dirname, "public", "index.html"));
 });
 
@@ -1705,7 +1707,8 @@ app.use((_req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  error("[Server] Error no manejado:", err.message);
+  error("[Server] Unhandled error:", err.stack);
+  if (res.headersSent) return;
   res.status(500).json({ error: "Internal server error" });
 });
 
@@ -1752,5 +1755,11 @@ function shutdown(signal) {
 
 process.on("SIGINT",  () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("uncaughtException", err => { error("[Server] uncaughtException:", err); });
+process.on("uncaughtException", err => {
+  error("[Server] uncaughtException:", err);
+  // State is undefined after an uncaught exception: stop and let the supervisor restart.
+  detectorManualStop = true;
+  if (detector && !detector.killed) detector.kill("SIGTERM");
+  process.exit(1);
+});
 process.on("unhandledRejection", (reason) => { error("[Server] unhandledRejection:", reason); });

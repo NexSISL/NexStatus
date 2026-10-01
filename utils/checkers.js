@@ -92,8 +92,8 @@ export async function checkDnsHealth(canaryHost = "cloudflare.com") {
 }
 
 const CLOUDFLARE_INDICATORS = [
-  "cloudflare", "cf-ray", "attention required", "one moment", "just a moment",
-  "checking your browser", "ddos protection", "security check",
+  "attention required", "just a moment", "checking your browser",
+  "ddos protection", "security check",
 ];
 
 function matchesKeyword(responseBody, keyword, mode = "contains") {
@@ -122,12 +122,13 @@ function matchesKeyword(responseBody, keyword, mode = "contains") {
   }
 }
 
-function isCloudflareBlock(bodyText, headers) {
-  const cfRay = headers?.get?.("cf-ray");
-  if (cfRay) return true;
-  const server = headers?.get?.("server") ?? "";
-  if (server.toLowerCase().includes("cloudflare")) return true;
-  if (!bodyText) return false;
+// Only a real Cloudflare challenge (403/503) counts as "reachable". Any other
+// non-2xx, including CF 52x origin errors, means the origin is actually down.
+function isCloudflareBlock(status, bodyText, headers) {
+  if (status !== 403 && status !== 503) return false;
+  if (headers?.get?.("cf-mitigated") === "challenge") return true;
+  const viaCf = headers?.get?.("cf-ray") || String(headers?.get?.("server") ?? "").toLowerCase().includes("cloudflare");
+  if (!viaCf || !bodyText) return false;
   const lower = bodyText.toLowerCase();
   return CLOUDFLARE_INDICATORS.some(kw => lower.includes(kw));
 }
@@ -228,26 +229,11 @@ async function runCheck(service) {
       }
 
       if (!res.ok) {
-        if (method === "GET") {
-          try {
-            const body = await res.text();
-            if (isCloudflareBlock(body, res.headers)) {
-              return { status: "up", code: res.status, latency, error: "cloudflare_bypass" };
-            }
-          } catch {}
-        } else if (method === "HEAD") {
-          if (isCloudflareBlock(null, res.headers)) {
-            return { status: "up", code: res.status, latency, error: "cloudflare_bypass" };
-          }
-        }
-        return { status: "down", code: res.status, latency, error: "http_status", debug: { httpStatus: res.status } };
-      }
-
-      if (method === "GET") {
-        const body = await res.text();
-        if (isCloudflareBlock(body, res.headers)) {
+        const body = method === "GET" ? await res.text().catch(() => null) : null;
+        if (isCloudflareBlock(res.status, body, res.headers)) {
           return { status: "up", code: res.status, latency, error: "cloudflare_bypass" };
         }
+        return { status: "down", code: res.status, latency, error: "http_status", debug: { httpStatus: res.status } };
       }
 
       return { status: "up", code: res.status, latency };
