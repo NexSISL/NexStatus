@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
@@ -189,6 +189,12 @@ before(async () => {
   await startDiscordMock();
   await startDiscordGatewayMock();
   await startNexStatusServer();
+  // The detector creates status.json asynchronously; admin writes need it to exist.
+  const statusFile = path.join(testDirectory, "data", "status.json");
+  for (let i = 0; i < 200; i++) {
+    if (await access(statusFile).then(() => true, () => false)) break;
+    await sleep(50);
+  }
 });
 
 after(async () => {
@@ -313,11 +319,15 @@ test("Discord status embed uses one durable message and only replaces a confirme
   assert.equal(identify.d.presence.status, "dnd");
   assert.deepEqual(identify.d.presence.activities, [{ name: "NexStatus Live", type: 1, url: "https://twitch.tv/nexstatus" }]);
 
-  result = await request("/admin/api/discord/send-status", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${currentJwt}` },
-  });
-  assert.equal(result.response.status, 200);
+  // The settings save fires an embed send; a request arriving while it is still
+  // in flight joins it instead of patching. Send twice so one is a real update.
+  for (let i = 0; i < 2; i++) {
+    result = await request("/admin/api/discord/send-status", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${currentJwt}` },
+    });
+    assert.equal(result.response.status, 200);
+  }
   assert.equal(discord.posts, 1, "updating must not create a second status message");
   assert.ok(discord.patches >= 1);
 
