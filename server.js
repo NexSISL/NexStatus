@@ -413,7 +413,7 @@ function makeRateLimiter(maxRequests, windowMs) {
   return (req, res, next) => {
     const trustProxy = process.env.TRUST_PROXY === "1";
     const ip = (trustProxy && req.headers["x-forwarded-for"])
-      ? req.headers["x-forwarded-for"].split(",")[0].trim()
+      ? req.headers["x-forwarded-for"].split(",").pop().trim()
       : req.socket.remoteAddress ?? "unknown";
     const now = Date.now();
     let data = clients.get(ip);

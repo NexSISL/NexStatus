@@ -28,12 +28,12 @@ export function isDnsErrorResult(result) {
 
 /* ═══════════════════════════════════════════
    DNS resolution — public resolver fallback + IP cache
-   Once a hostname resolves, its IP is kept in memory and reused directly
-   (no further DNS lookups) until the process restarts — see
-   POST /admin/api/detector/restart if a domain's IP ever changes.
+   Once a hostname resolves, its IP is kept in memory and reused directly for
+   DNS_CACHE_TTL_MS, so a changed IP is picked up without a restart.
 ═══════════════════════════════════════════ */
 
-const dnsCache = new Map(); // hostname -> ip
+const DNS_CACHE_TTL_MS = 5 * 60_000;
+const dnsCache = new Map(); // hostname -> { ip, at }
 
 const FALLBACK_DNS_SERVERS = [
   ["1.1.1.1", "1.0.0.1"],               // Cloudflare
@@ -42,7 +42,7 @@ const FALLBACK_DNS_SERVERS = [
   ["208.67.222.222", "208.67.220.220"], // OpenDNS
 ];
 
-export function getDnsCacheSnapshot() { return Object.fromEntries(dnsCache); }
+export function getDnsCacheSnapshot() { return Object.fromEntries([...dnsCache].map(([host, { ip }]) => [host, ip])); }
 export function clearDnsCache() { dnsCache.clear(); }
 
 // Tries the system resolver + all fallback resolvers concurrently and takes
@@ -72,9 +72,9 @@ async function resolveHostFresh(hostname, { timeoutMs = 3000 } = {}) {
 async function resolveHost(hostname) {
   if (net.isIP(hostname)) return hostname;
   const cached = dnsCache.get(hostname);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.at < DNS_CACHE_TTL_MS) return cached.ip;
   const ip = await resolveHostFresh(hostname);
-  dnsCache.set(hostname, ip);
+  dnsCache.set(hostname, { ip, at: Date.now() });
   return ip;
 }
 
@@ -137,6 +137,8 @@ function isCloudflareBlock(status, bodyText, headers) {
 // + fallback resolvers) and connects straight to that IP, bypassing the
 // system resolver entirely on cache hits. Host header / TLS SNI still use
 // the original hostname, so virtual hosting and certificate checks work.
+const MAX_BODY_BYTES = 1024 * 1024;
+
 async function httpRequestDirect(urlStr, { method, headers, timeoutMs, redirects = 5 }) {
   const u  = new URL(urlStr);
   const ip = await resolveHost(u.hostname);
@@ -153,11 +155,14 @@ async function httpRequestDirect(urlStr, { method, headers, timeoutMs, redirects
         res.resume(); // discard body, follow redirect
         const nextMethod = res.statusCode === 303 ? "GET" : method;
         const nextUrl = new URL(res.headers.location, u).toString();
-        resolve(httpRequestDirect(nextUrl, { method: nextMethod, headers, timeoutMs, redirects: redirects - 1 }));
+        // Custom headers (e.g. Authorization) must not leak to another origin.
+        const nextHeaders = new URL(nextUrl).origin === u.origin ? headers : {};
+        resolve(httpRequestDirect(nextUrl, { method: nextMethod, headers: nextHeaders, timeoutMs, redirects: redirects - 1 }));
         return;
       }
       const chunks = [];
-      res.on("data", (c) => chunks.push(c));
+      let size = 0;
+      res.on("data", (c) => { if (size < MAX_BODY_BYTES) { chunks.push(c); size += c.length; } });
       res.on("end", () => resolve({
         status: res.statusCode,
         ok: res.statusCode >= 200 && res.statusCode < 300,
